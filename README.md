@@ -17,27 +17,6 @@ The application supports two operational modes:
 
 > **Note**: This application has been primarily tested on macOS with Python 3.12. While it may work on other operating systems, some adjustments might be necessary.
 
-## Code Structure
-
-```
-browser-control-with-nova-act
-├── app.py                  # Application main entry point
-├── nova_chatbot_simple.py  # Direct mode implementation
-├── nova_chatbot_complex.py # Agent mode implementation
-├── core/                   # Core functionality modules
-│   ├── __init__.py
-│   ├── browser_controller.py   # Browser control abstraction layer
-│   ├── config.py              # Configuration parameters
-│   ├── inline_agent.py       # Inline agent implementation
-│   ├── tools.py              # Browser control tools
-│   └── callbacks.py          # Callback handling functions
-├── utils/                  # Utility functions
-│   ├── __init__.py
-│   ├── browser_manager.py    # Browser thread management
-│   └── chat_utils.py         # Chat-related utilities
-└── requirements.txt        # Dependency packages
-```
-
 ## Demo 1 - Shopping (Live)
 
 ![Nova Act Shopping Demo Screen](images/nova-act-shopping.gif)
