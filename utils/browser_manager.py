@@ -39,6 +39,8 @@ browser_controller = None
 config = {
     "max_steps": 10, 
     "headless": DEFAULT_BROWSER_SETTINGS["headless"],
+    "user_data_dir": DEFAULT_BROWSER_SETTINGS["user_data_dir"],
+    "clone_user_data_dir": DEFAULT_BROWSER_SETTINGS["clone_user_data_dir"],
 }
 
 def browser_thread_func():
@@ -54,11 +56,24 @@ def browser_thread_func():
         print("Initializing NovaAct in browser thread...")
         print(f"Using configuration: headless={config['headless']}, max_steps={config['max_steps']}")
         
-        nova_instance = NovaAct(
-            starting_page="https://www.google.com",
-            headless=config["headless"],
-            record_video=DEFAULT_BROWSER_SETTINGS["record_video"]
-        )
+        # Prepare NovaAct initialization arguments
+        nova_args = {
+            "starting_page": DEFAULT_BROWSER_SETTINGS["start_url"],
+            "headless": config["headless"],
+            "record_video": DEFAULT_BROWSER_SETTINGS["record_video"]
+        }
+        
+        # Add user_data_dir if specified
+        if "user_data_dir" in config and config["user_data_dir"]:
+            nova_args["user_data_dir"] = config["user_data_dir"]
+            print(f"Using user_data_dir: {config['user_data_dir']}")
+            
+            # Add clone_user_data_dir if specified
+            if "clone_user_data_dir" in config:
+                nova_args["clone_user_data_dir"] = config["clone_user_data_dir"]
+                print(f"clone_user_data_dir set to: {config['clone_user_data_dir']}")
+        
+        nova_instance = NovaAct(**nova_args)
         
         # Start browser
         nova_instance.start()
@@ -215,6 +230,21 @@ def get_browser_controller():
     global browser_controller
     return browser_controller
 
+def is_browser_ready():
+    """Check if the browser is ready"""
+    global browser_ready
+    return browser_ready
+
+def get_browser_error():
+    """Get browser error if any"""
+    global browser_error
+    return browser_error
+    
+def get_config():
+    """Get the current browser configuration"""
+    global config
+    return config.copy()
+    
 def is_browser_ready():
     """Check if the browser is ready"""
     global browser_ready

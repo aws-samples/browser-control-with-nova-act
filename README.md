@@ -41,93 +41,69 @@ export NOVA_ACT_API_KEY="your_api_key"
 ### 2. Set Up Virtual Environment
 
 ```bash
-# Create virtual environment
+# Create and activate virtual environment
 python3 -m venv .venv
-
-# Activate virtual environment
 source .venv/bin/activate
 
-# Install dependencies
+# Install required packages
 pip install -r requirements.txt
 ```
 
-### 3. Nova Act - Direct Mode
+### 3. Using Authenticated Browser Sessions
 
-Direct mode passes natural language commands directly to the Nova Act SDK:
+For websites requiring login, configure a persistent browser profile:
 
+```python
+# In core/config.py
+{
+   user_data_dir = "/path/to/chrome/profile"
+}
+```
+
+> **Security Note**: Be cautious with authenticated sessions to avoid exposing sensitive information
+
+### 4. Mode Selection
+
+When implementing browser automation with Nova Act, choosing the right orchestration mode is crucial for success. Our implementation provides two distinct approaches:
+
+**Direct Mode - Simple and Straightforward** 
+
+Perfect for well-defined workflows with clear steps. Leverages Nova Act's native ability to interpret specific browser instructions.
+
+To launch:
 ```bash
 chainlit run -w nova_act_direct.py
 ```
+Configure operation parameters in `core/config.py`:
+- Control headless mode, step limits, timeouts, and user profiles
 
-#### Configuration
+Try commands like:
+- "Go to amazon.com and search for white shirt"
+- "Scroll down the page"
+- "Click on the third result"
 
-Nova Act operation parameters can be configured in the `core/config.py` file:
+**Agent Mode - Intelligent and Complex**
 
-- `headless`: Whether to run the browser in background mode
-- `max_steps`: Maximum number of steps Nova Act will perform
-- `timeout`: Maximum execution time (in seconds) for each action
+Handles sophisticated, open-ended tasks through a three-layer AI architecture. Combines Bedrock Agent's reasoning with LangGraph's orchestration to break down complex requests into manageable actions.
 
-
-#### Example Commands:
-
-- "go to amazon.com and search for white shirt"
-- "scroll down the page"
-- "click on the third result"
-
-
-### 4. Nova Act - Agent Mode
-
-Agent mode utilizes a multi-agent architecture to handle complex browser tasks:
-
+To launch:
 ```bash
 chainlit run -w nova_act_agent.py
 ```
 
-The Agent Mode implements a three-tier hierarchical structure for browser automation:
+Three-tier Architecture:
 
 ![Agent Architecture](images/agent_architecture.svg)
 
-1. **High Level - LangGraph**
-   - Handles user engagement and conversation flow management
-   - Performs task decomposition using Plan-Execute Pattern
-   - Makes high-level decisions and task planning
+- High Level (LangGraph): Manages conversations, decomposes tasks, and plans high-level strategies
+- Mid Level (Bedrock Agent): Breaks down complex tasks and adjusts actions dynamically
+- Low Level (Nova Act): Executes specific browser interactions and reports results
 
-2. **Mid Level - Bedrock Agent**
-   - Breaks down complex tasks into smaller, manageable actions
-   - Monitors execution progress and adjusts actions dynamically
+Advanced configuration options in core/config.py:
+- Browser settings (parallel execution, video recording, screenshots)
+- Execution parameters (iteration limits, result collection)
+- AI model settings for each processing stage
 
-3. **Low Level - Nova Act**
-   - Executes specific browser-based tasks
-   - Performs concrete actions like navigation and data input
-   - Reports execution status back to higher levels
-
-#### Agent Mode Configuration
-
-```python
-# core/config.py
-DEFAULT_BROWSER_SETTINGS = {
-    "start_url": "https://www.google.com",
-    "headless": True,
-    "record_video": False,
-    "screenshot_dir_prefix": "nova_act_screenshots_",
-    "parallel_mode": True,  
-    "max_concurrent_browsers": 2,  
-    "timeout": 200,  
-    "max_steps": 10  
-}
-
-EXECUTION_CONFIG = {
-    "max_turns": 10,
-    "collect_results": False
-}
-```
-In Agent mode, you can configure the following:
-
-- All Nova Act configuration parameters from Direct mode
-- Maximum iteration count for Bedrock Agent
-- AI model settings for each stage
-- Browser controller behavior
-- Task partitioning and planning strategies
 
 ## License
 

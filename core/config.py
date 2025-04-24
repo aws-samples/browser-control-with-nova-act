@@ -5,13 +5,15 @@ Configuration settings for Nova Act App
 # Browser settings (Nova Act Handling)
 DEFAULT_BROWSER_SETTINGS = {
     "start_url": "https://www.google.com",
-    "headless": True,
-    "record_video": False,
+    "headless": False,
+    "record_video": True,
     "screenshot_dir_prefix": "nova_act_screenshots_",
+    "user_data_dir": "",  # Path to user data directory for persistent browser state
+    "clone_user_data_dir": True,  # Whether to clone the user data directory
     "parallel_mode": True,  # Enable/disable parallel task execution
-    "max_concurrent_browsers": 2,  # Maximum number of concurrent browser instances
+    "max_concurrent_browsers": 1,  # Maximum number of concurrent browser instances
     "timeout": 90,  
-    "max_steps": 5
+    "max_steps": 8
 }
 
 # Model configurations (Converse API)
