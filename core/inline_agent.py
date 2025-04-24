@@ -72,15 +72,23 @@ def initialize_browser_from_state(state: BrowserState) -> Tuple[Optional[NovaAct
     # Get timeout and max_steps from BROWSER_SETTINGS
     timeout = DEFAULT_BROWSER_SETTINGS.get("timeout", 300)
     max_steps = DEFAULT_BROWSER_SETTINGS.get("max_steps", 30)
-    
+    user_data_dir = DEFAULT_BROWSER_SETTINGS.get("user_data_dir")
+    clone_user_data_dir = DEFAULT_BROWSER_SETTINGS.get("clone_user_data_dir", True)
+
     try:
         browser_id = str(uuid.uuid4())[:8]
         
-        nova = NovaAct(
-            starting_page=url,
-            headless=headless,
-            record_video=record_video
-        )
+        nova_args = {
+            "starting_page": url,
+            "headless": headless,
+            "record_video": record_video
+        }
+        
+        if user_data_dir:
+            nova_args["user_data_dir"] = user_data_dir
+            nova_args["clone_user_data_dir"] = clone_user_data_dir
+        
+        nova = NovaAct(**nova_args)
         
         nova.start()
         

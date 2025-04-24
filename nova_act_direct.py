@@ -37,7 +37,7 @@ conversation_history = []
 
 # LLM Configuration
 llm_config = {
-    "model": "anthropic.claude-3-5-sonnet-20241022-v2:0",
+    "model": "us.anthropic.claude-3-7-sonnet-20250219-v1:0",
     "temperature": 0.2,
     "max_tokens": 1000,
     "region_name": "us-west-2" 
