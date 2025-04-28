@@ -8,7 +8,7 @@ DEFAULT_BROWSER_SETTINGS = {
     "headless": True,
     "record_video": True,
     "screenshot_dir_prefix": "nova_act_screenshots_",
-    "user_data_dir": "/Users/kevmyung/nova_chrome_profile/",  # Path to user data directory for persistent browser state
+    "user_data_dir": False,  # Path to user data directory for persistent browser state
     "clone_user_data_dir": True,  # Whether to clone the user data directory
     "parallel_mode": True,  # Enable/disable parallel task execution
     "max_concurrent_browsers": 1,  # Maximum number of concurrent browser instances
