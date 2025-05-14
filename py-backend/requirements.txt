@@ -1,0 +1,12 @@
+boto3
+mcp
+asyncio
+pydantic
+typing-extensions
+fastmcp
+fastapi
+uvicorn
+fastapi-cors
+setuptools
+nova-act
+playwright

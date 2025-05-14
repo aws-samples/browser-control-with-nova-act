@@ -1,0 +1,9 @@
+[
+  {
+    "id": "default-mcp-1",
+    "name": "Nova Act (Local)",
+    "hostname": "localhost:8000",
+    "isActive": true,
+    "isConnected": true
+  }
+]

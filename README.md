@@ -1,110 +1,274 @@
 # Nova Act Browser Automation Chatbot
 
-## Application Overview
+A sophisticated browser automation platform integrating Model Context Protocol (MCP) with multi-tier AI orchestration.
 
-Nova Act Browser Automation Chatbot provides an interactive interface for controlling web browsers using natural language commands. It leverages the Nova Act SDK to transform user requests into direct browser actions and integrates with Amazon Bedrock's LLMs to provide intelligent analysis of browser activities.
+## Key Features
 
-The application supports two operational modes:
+### 1. Amazon Bedrock Integration
+- Seamless integration with Amazon Bedrock's foundation models and capabilities
+- Compatible with a wide range of Bedrock-provided AI models including Claude and others
+- Leverages Bedrock's security, scalability, and enterprise-grade features
+- Enables access to continuously updated models without requiring system changes
 
-1. **Direct Mode**: Passes user's natural language commands directly to the Nova Act SDK
-2. **Agent Mode**: Utilizes multiple AI agents to handle complex browser tasks
+### 2. 3-Layer Orchestration Architecture
+The system employs a three-tier AI architecture for handling complex browser automation tasks:
 
-## System Requirements (Tested on)
+- **Supervisor Layer**: Breaks down complex tasks into manageable missions, provides context awareness, and coordinates the overall workflow
+- **Agent Layer**: Executes specific browser missions, interprets results, and makes tactical decisions
+- **Nova Act Layer**: Performs direct browser interactions based on natural language instructions
 
-- **Operating System**: Tested on macOS (Apple Silicon)
-- **Python Version**: 3.12
-- **Dependencies**: See `requirements.txt` for full list
+### 3. MCP Integration with Nova Act
+- Seamless integration with Model Context Protocol (MCP) allowing easy connection of various tools
+- Standardized communication between AI models and browser automation
+- Extensible tool interface for adding custom capabilities
 
-> **Note**: This application has been primarily tested on macOS with Python 3.12. While it may work on other operating systems, some adjustments might be necessary.
+### 4. Automated Workflow Routing
+- Intelligent request classification to determine appropriate execution strategy
+- Smart routing between navigation, action, and complex agent workflows
+- Dynamic adaptation to different task complexities based on user intent
 
-## Demo 1 - Shopping (Live)
+### 5. Workflow Customization
+- Nova Act handles actions while orchestration is managed by agents and supervisors
+- Easily optimizable for specific workflows through prompt modifications
+- Adaptable to different use cases without code changes
 
-![Nova Act Shopping Demo Screen](images/nova-act-shopping.gif)
 
-## Demo 2 - Travel Planning (Playback)
+> **Note on Multi-Browser Support**: Previous versions supported parallel processing with multiple browser instances. This feature is currently disabled due to usage limitations in the Nova Act SDK Preview. However, the system architecture is designed for future scalability with asynchronous implementation, allowing the Supervisor Agent to orchestrate multiple Browser Control Agents with individual browser instances simultaneously when SDK constraints are lifted.
 
-![Nova Act Travel Demo Screen](images/nova-act-travel.gif)
 
-## Usage Instructions
 
-### 1. Set Up Nova Act API Key
+## Architecture
 
-An API key is required to use Nova Act:
+<img src="assets/architecture.svg" width="900" alt="Architecture">
 
-1. Navigate to [https://nova.amazon.com/act](https://nova.amazon.com/act) and generate an API key.
-2. Save it as an environment variable by executing in the terminal:
+### Supervisor Agent
+The Supervisor Agent acts as the orchestration layer, serving as the bridge between user intent and execution strategy:
+
+- **Task Analysis**: Interprets user requests to understand the true intent and required outcomes
+- **Task Decomposition**: Breaks complex requests into a sequence of simpler, executable steps
+- **Execution Strategy Selection**: Determines whether to route tasks as simple navigation, direct actions, or complex workflows
+- **Context Management**: Maintains awareness of the conversation history and task progression
+- **Progress Monitoring**: Tracks the completion status of sub-tasks and determines when the overall goal is achieved
+- **Response Synthesis**: Compiles findings and results into coherent, informative responses for the user
+
+For simple tasks, the Supervisor will route directly to the appropriate tool (Act for interactions, Navigate for URL changes). For complex tasks requiring multiple steps and reasoning, it engages the Browser Control Agent.
+
+### Browser Control Agent
+The Browser Control Agent manages complex browser interactions and task execution:
+
+- **Mission Execution**: Takes specific missions from the Supervisor and translates them into concrete browser actions
+- **Visual Analysis**: Interprets screenshots and page content to understand the browser state
+- **Dynamic Decision Making**: Makes tactical decisions about how to accomplish the given mission
+- **Data Extraction**: Identifies and extracts relevant information from web pages
+- **Error Handling**: Manages obstacles like pop-ups, login walls, or navigation issues
+- **Adaptive Navigation**: Adjusts its approach based on the evolving state of the browser
+- **Reporting**: Provides structured feedback about actions taken, information found, and any obstacles encountered
+
+The Browser Control Agent interacts with the Nova Act Server through MCP tools (Act, Navigate, Extract) to perform the actual browser manipulations and data gathering.
+
+## Task Processing Flow
+
+When users submit natural language requests, the system:
+
+1. **Classification**: Router analyzes the request to determine the optimal execution path
+2. **Task Planning**: Supervisor breaks complex tasks into sequential steps
+3. **Execution**: Agent interprets each step and coordinates with Nova Act for browser interactions
+4. **Analysis**: Results are processed and presented to the user with visual feedback
+
+The system intelligently switches between simple navigation, direct browser actions, and complex multi-step workflows based on the request complexity, with no manual mode selection required.
+
+markdown
+
+## Visual Examples
+
+### Shopping
+<img src="assets/screenshots/shopping.png" width="700" alt="Chat Interface">
+
+
+## Installation
+
+### Prerequisites
+- MacOS
+- Python 3.10+
+- Node.js 18+
+- npm or yarn
+
+### Backend Setup
 
 ```bash
-export NOVA_ACT_API_KEY="your_api_key"
-```
+# Clone the repository
+git clone https://github.com/aws-samples/browser-control-with-nova-act.git
+cd browser-control-with-nova-act
 
-### 2. Set Up Virtual Environment
-
-```bash
 # Create and activate virtual environment
-python3 -m venv .venv
-source .venv/bin/activate
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
 
-# Install required packages
+# Install backend dependencies
+cd py-backend
 pip install -r requirements.txt
 ```
 
-### 3. Using Authenticated Browser Sessions
+### Frontend Setup
 
-For websites requiring login, configure a persistent browser profile:
+```bash
+# From the project root
+cd ..
+npm install   # or yarn install
+```
+
+## Configuration
+
+### Set Nova Act API Key
+
+```bash
+# Set environment variable
+export NOVA_ACT_API_KEY="your_api_key_here"
+
+# Alternatively, add to .env file
+echo "NOVA_ACT_API_KEY=your_api_key_here" >> .env
+```
+
+### Configure Browser Settings
+
+Edit `py-backend/app/libs/config.py` to customize browser behavior:
 
 ```python
-# In core/config.py
-{
-   user_data_dir = "/path/to/chrome/profile"
-}
+# Core browser settings
+BROWSER_HEADLESS = False  # Set to True for headless operation
+BROWSER_START_URL = "https://www.google.com"  # Default starting URL
+BROWSER_MAX_STEPS = 3  # Maximum steps for Nova Act
+
+# Browser profile settings (for authentication)
+BROWSER_USER_DATA_DIR = '/path/to/chrome/profile'  # For persistent sessions
+BROWSER_CLONE_USER_DATA = True  # Clone profile to protect original
+
+# Performance settings
+BROWSER_TIMEOUT = 100  # Timeout in seconds
+BROWSER_URL_TIMEOUT = 60  # URL navigation timeout
 ```
 
-> **Security Note**: Be cautious with authenticated sessions to avoid exposing sensitive information
+The system allows using session information through the `BROWSER_USER_DATA_DIR` setting and can clone the user profile with `BROWSER_CLONE_USER_DATA`, enabling persistent logins and site preferences while protecting the original profile from modifications.
 
-### 4. Mode Selection
+### Configure AI Models
 
-When implementing browser automation with Nova Act, choosing the right orchestration mode is crucial for success. Our implementation provides two distinct approaches:
+```python
+# In py-backend/app/libs/config.py
 
-**Direct Mode - Simple and Straightforward** 
+# Default model configurations
+DEFAULT_MODEL_ID = "us.anthropic.claude-3-7-sonnet-20250219-v1:0"  # Change as needed
+MAX_SUPERVISOR_TURNS = 4  # Maximum conversation turns between supervisor and agent
+MAX_AGENT_TURNS = 6  # Maximum turns between agent and MCP tools
+```
 
-Perfect for well-defined workflows with clear steps. Leverages Nova Act's native ability to interpret specific browser instructions.
+Only models with Tool Use and multimodal capabilities are compatible with Browser Control With Nova Act. Claude Sonnet 3.7 and Sonnet 3.5 work best for optimal performance. While Nova models can work, they occasionally encounter errors with tool use formatting.
 
-To launch:
+## Running the Application
+
+### Start the Application
+
 ```bash
-chainlit run -w nova_act_direct.py
-```
-Configure operation parameters in `core/config.py`:
-- Control headless mode, step limits, timeouts, and user profiles
-
-Try commands like:
-- "Go to amazon.com and search for white shirt"
-- "Scroll down the page"
-- "Click on the third result"
-
-**Agent Mode - Intelligent and Complex**
-
-Handles sophisticated, open-ended tasks through a three-layer AI architecture. Combines Bedrock Agent's reasoning with LangGraph's orchestration to break down complex requests into manageable actions.
-
-To launch:
-```bash
-chainlit run -w nova_act_agent.py
+# From project root
+npm run dev
 ```
 
-Three-tier Architecture:
+Running `npm run dev` starts both the frontend application and the backend Nova MCP server simultaneously, providing a streamlined development experience.
 
-![Agent Architecture](images/agent_architecture.svg)
+The application will be available at http://localhost:3000
 
-- High Level (LangGraph): Manages conversations, decomposes tasks, and plans high-level strategies
-- Mid Level (Bedrock Agent): Breaks down complex tasks and adjusts actions dynamically
-- Low Level (Nova Act): Executes specific browser interactions and reports results
+## Usage
 
-Advanced configuration options in core/config.py:
-- Browser settings (parallel execution, video recording, screenshots)
-- Execution parameters (iteration limits, result collection)
-- AI model settings for each processing stage
+### Intelligent Task Routing
 
+The system automatically determines the most appropriate execution strategy for each user request:
+
+- **Navigation Requests**: Simple website visits and URL navigation
+- **Action Requests**: Direct interactions with visible elements on current pages
+- **Complex Information Tasks**: Multi-step research, information gathering, and comparison workflows
+
+### Example Commands
+
+```
+# Navigation examples
+"Go to amazon.com"
+"Search for wireless headphones on Best Buy"
+
+# Action examples
+"Click the search bar and type 'wireless headphones'"
+"Scroll down to see more products"
+"Add the first item to my cart"
+
+# Complex research examples
+"Find the best-rated wireless headphones under $100 and compare their features"
+"Research the average house prices in Seattle over the last 5 years"
+"Give me a summary of the latest news about artificial intelligence"
+```
+
+## Advanced Configuration
+
+### Customizing Prompts
+
+You can modify the system's behavior by adjusting the prompt templates:
+
+- `ROUTER_PROMPT`: Controls task classification logic
+- `SUPERVISOR_PROMPT`: Guides high-level mission planning
+- `NOVA_ACT_AGENT_PROMPT`: Defines browser interaction behavior
+
+### Performance Tuning
+
+For optimal performance, adjust these settings based on your use case:
+
+```python
+# In py-backend/app/libs/config.py
+
+# Browser performance settings
+BROWSER_SCREENSHOT_QUALITY = 70  # Lower for faster performance
+BROWSER_SCREENSHOT_MAX_WIDTH = 800  # Balance between detail and size
+BROWSER_RECORD_VIDEO = False  # Enable for debugging
+
+# Conversation memory settings
+MAX_CONVERSATION_MESSAGES = 50  # Reduce for lower memory usage
+```
+
+### Conversation Storage Options
+
+The system supports different storage mechanisms for conversation history:
+
+```python
+# In-memory storage (faster, not persistent)
+CONVERSATION_STORAGE_TYPE = "memory"
+
+# File-based storage (persistent across restarts)
+CONVERSATION_STORAGE_TYPE = "file"
+CONVERSATION_FILE_TTL_DAYS = 7  # Auto-cleanup after 7 days
+```
+
+## Technical Details
+
+### Session Management
+
+The backend maintains browser sessions per user, allowing for continuous interactions across multiple requests. Sessions include:
+
+- Browser state and navigation history
+- Conversation context
+- Screenshots and visual feedback
+
+### Error Handling
+
+Comprehensive error management includes:
+
+- Automatic recovery from common browser issues
+- Clear error messages with visual context
+- Session persistence during temporary failures
+
+### Thought Process Visualization
+
+The system provides transparency into its decision-making process through:
+
+- Step-by-step reasoning logs
+- Visual feedback of browser state
+- Execution pathways and decision points
 
 ## License
 
-This library is licensed under the MIT-0 License. See the LICENSE file.
+This project is licensed under the MIT License - see the LICENSE file for details.

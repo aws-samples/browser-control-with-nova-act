@@ -1,0 +1,367 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@keyframes fadeInSlideUp {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes pulseGlow {
+  0% {
+    box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.1);
+  }
+  50% {
+    box-shadow: 0 0 0 5px rgba(59, 130, 246, 0.05);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(59, 130, 246, 0);
+  }
+}
+
+@layer components {
+  /* Custom animation classes */
+  .animate-fade-in-up {
+    animation: fadeInSlideUp 0.4s ease-out forwards;
+  }
+  
+  .animate-pulse-glow {
+    animation: pulseGlow 2s infinite;
+  }
+  
+  /* Hover animations for interactive elements */
+  .hover-lift {
+    @apply transition-transform duration-200 ease-out;
+  }
+  .hover-lift:hover {
+    @apply transform -translate-y-0.5 shadow-md;
+  }
+  
+  /* Button hover animations */
+  .btn-hover {
+    @apply relative overflow-hidden transition-all duration-200;
+  }
+  
+  .btn-hover::before {
+    @apply content-[''] absolute top-0 left-0 w-0 h-full bg-white/10 transform skew-x-[-15deg] transition-all duration-500 ease-out;
+  }
+  
+  .btn-hover:hover::before {
+    @apply w-[120%];
+  }
+  
+  /* Message bubble hover effect */
+  .message-bubble {
+    @apply transition-all duration-200 border border-transparent;
+  }
+  
+  .message-bubble:hover {
+    @apply border-blue-200 dark:border-blue-800/50 shadow-md;
+  }
+  
+  /* Thought node hover effect */
+  .thought-node {
+    @apply transition-all duration-200;
+  }
+  
+  .thought-node:hover {
+    @apply transform scale-[1.01] shadow-md;
+  }
+}
+
+body {
+    font-family: var(--font-inter), -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-feature-settings: 'tnum', 'lnum', 'case', 'ss03';
+    letter-spacing: -0.01em;
+}
+
+.tabular-nums {
+    font-feature-settings: 'tnum' on, 'lnum' on;
+}
+
+.heading-font {
+    font-weight: 600;
+    letter-spacing: -0.02em;
+}
+
+@layer utilities {
+    .text-balance {
+        text-wrap: balance;
+    }
+}
+
+@layer base {
+    :root {
+        --background: 210 40% 98%;
+        --foreground: 222 47% 11%;
+        --card: 0 0% 100%;
+        --card-foreground: 222 47% 11%;
+        --popover: 0 0% 100%;
+        --popover-foreground: 222 47% 11%;
+        --primary: 221 83% 53%; 
+        --primary-foreground: 210 40% 98%;
+        --secondary: 215 25% 95%;
+        --secondary-foreground: 222 47% 11%;
+        --muted: 210 40% 96.1%;
+        --muted-foreground: 220 10% 45%;
+        --accent: 206 100% 97%;
+        --accent-foreground: 221 83% 53%;
+        --destructive: 0 84.2% 60.2%;
+        --destructive-foreground: 210 40% 98%;
+        --border: 214 32% 91%;
+        --input: 214 32% 91%;
+        --ring: 221 83% 53%;
+        --radius: 0.5rem;
+        --chart-1: 221 83% 53%;
+        --chart-2: 330 85% 62%;
+        --chart-3: 159 76% 45%;
+        --chart-4: 43 96% 58%;
+        --chart-5: 262 83% 58%;
+    }
+    .dark {
+        --background: 222 47% 10%;
+        --foreground: 210 40% 98%;
+        --card: 222 47% 11%;
+        --card-foreground: 210 40% 98%;
+        --popover: 222 47% 11%;
+        --popover-foreground: 210 40% 98%;
+        --primary: 217 91% 65%;
+        --primary-foreground: 210 40% 98%;
+        --secondary: 217 32% 17%;
+        --secondary-foreground: 210 40% 98%;
+        --muted: 217 32% 17%;
+        --muted-foreground: 215 20% 70%; 
+        --accent: 217 91% 15%;
+        --accent-foreground: 217 91% 65%;
+        --destructive: 0 62.8% 30.6%;
+        --destructive-foreground: 210 40% 98%;
+        --border: 217 32% 17%;
+        --input: 217 32% 17%;
+        --ring: 224 76% 60%;
+        --chart-1: 217 91% 65%;
+        --chart-2: 330 85% 70%;
+        --chart-3: 159 76% 60%;
+        --chart-4: 43 96% 65%;
+        --chart-5: 262 83% 70%;
+    }
+}
+
+@layer base {
+    * {
+        @apply border-border;
+    }
+    body {
+        @apply bg-background text-foreground;
+        background-color: #f9fafb;
+    }
+    
+    body.dark {
+        background-color: #111827;
+    }
+    strong {
+        @apply font-semibold text-gray-900 dark:text-white;
+    }
+    h1, h2, h3, h4, h5, h6 {
+        @apply tracking-tight;
+    }
+    
+    .heading-font {
+        letter-spacing: -0.02em;
+        font-weight: 700;
+        background: linear-gradient(to right, #2563eb, #4f46e5);
+        -webkit-background-clip: text;
+        background-clip: text;
+        -webkit-text-fill-color: transparent;
+        text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+    }
+    
+    .dark .heading-font {
+        background: linear-gradient(to right, #3b82f6, #6366f1);
+        -webkit-background-clip: text;
+        background-clip: text;
+        -webkit-text-fill-color: transparent;
+        text-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+    }
+    
+    .card {
+        @apply shadow-sm transition-all duration-200 hover:shadow-md;
+    }
+    
+
+    button, .button {
+        @apply transition-all duration-200;
+    }
+    
+    input, textarea {
+        @apply transition-all duration-200;
+    }
+}
+
+@media (max-width: 768px) {
+  .layout-stack {
+    flex-direction: column !important;
+  }
+  
+  .layout-full {
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+  
+  .mobile-hide {
+    display: none !important;
+  }
+}
+
+details summary {
+  position: relative;
+  cursor: pointer;
+  user-select: none;
+}
+
+details summary::-webkit-details-marker {
+  display: none;
+}
+
+details[open] .details-icon {
+  transform: rotate(180deg);
+}
+
+details .details-icon {
+  transition: transform 0.2s ease;
+}
+
+@layer utilities {
+    @keyframes fadeInUp {
+        0% {
+            opacity: 0;
+            transform: translateY(10px);
+        }
+        100% {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+
+    @keyframes pulse {
+        0%,
+        100% {
+            opacity: 1;
+        }
+        50% {
+            opacity: 0.7;
+        }
+    }
+    
+    @keyframes slideIn {
+        0% {
+            opacity: 0;
+            transform: translateX(-10px);
+        }
+        100% {
+            opacity: 1;
+            transform: translateX(0);
+        }
+    }
+    
+    @keyframes expandIn {
+        0% {
+            opacity: 0.5;
+            transform: scale(0.97);
+        }
+        100% {
+            opacity: 1;
+            transform: scale(1);
+        }
+    }
+
+    @keyframes fadeIn {
+        0% {
+            opacity: 0;
+        }
+        100% {
+            opacity: 1;
+        }
+    }
+    
+    @keyframes pulseSoft {
+        0%, 100% {
+            opacity: 1;
+        }
+        50% {
+            opacity: 0.85;
+        }
+    }
+    
+    @keyframes subtleFloat {
+        0%, 100% {
+            transform: translateY(0);
+        }
+        50% {
+            transform: translateY(-5px);
+        }
+    }
+    
+    .animate-fade-in-up {
+        animation: fadeInUp 0.4s ease-out forwards;
+    }
+    
+    .animate-fade-in {
+        animation: fadeIn 0.5s ease-out forwards;
+    }
+
+    .animate-pulse {
+        animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+    }
+    
+    .animate-pulse-subtle {
+        animation: pulseSoft 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+    }
+    
+    .animate-float {
+        animation: subtleFloat 4s ease-in-out infinite;
+    }
+    
+    .animate-slide-in {
+        animation: slideIn 0.3s ease-out forwards;
+    }
+    
+    .animate-expand-in {
+        animation: expandIn 0.2s ease-out forwards;
+    }
+    
+    .delay-100 {
+        animation-delay: 100ms;
+    }
+    
+    .delay-200 {
+        animation-delay: 200ms;
+    }
+    
+    .delay-300 {
+        animation-delay: 300ms;
+    }
+    
+    .hover-lift {
+        @apply transition-transform duration-200;
+    }
+    
+    .hover-lift:hover {
+        transform: translateY(-2px);
+    }
+    
+    .shadow-soft {
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05), 
+                   0 8px 25px -5px rgba(0, 0, 0, 0.1);
+    }
+    
+    .dark .shadow-soft {
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2), 
+                   0 8px 25px -5px rgba(0, 0, 0, 0.4);
+    }
+}
