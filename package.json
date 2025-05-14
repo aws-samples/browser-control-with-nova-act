@@ -1,0 +1,57 @@
+{
+  "name": "analysis-assistant",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "npx concurrently \"npm run client-dev\" \"npm run server-dev\"",
+    "build": "next build",
+    "start": "npx concurrently \"npm run client-start\" \"npm run server-start\"",
+    "lint": "next lint",
+    "kill-port": "node -e \"try { process.kill(process.env.PORT_PID || require('child_process').execSync('lsof -t -i:8000').toString().trim()); console.log('Port 8000 released'); } catch(e) { console.log('Port 8000 was not in use'); }\"",
+    "client-dev": "NODE_OPTIONS='--no-warnings' node node_modules/next/dist/bin/next dev",
+    "client-start": "NODE_OPTIONS='--no-warnings' node node_modules/next/dist/bin/next start",
+    "server-dev": "npm run kill-port && cd py-backend && uvicorn app.app:app --host 0.0.0.0 --port 8000 --reload",
+    "server-start": "cd py-backend && uvicorn app.app:app --host 0.0.0.0 --port 8000"
+  },
+  "engines": {
+    "node": ">=16.0.0 <24.0.0"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.29.0",
+    "@aws-sdk/client-bedrock-runtime": "^3.679.0",
+    "@radix-ui/react-avatar": "^1.1.1",
+    "@radix-ui/react-checkbox": "^1.3.0",
+    "@radix-ui/react-dialog": "^1.1.12",
+    "@radix-ui/react-dropdown-menu": "^2.1.2",
+    "@radix-ui/react-icons": "^1.3.0",
+    "@radix-ui/react-label": "^2.1.0",
+    "@radix-ui/react-slot": "^1.1.0",
+    "@radix-ui/react-toast": "^1.2.2",
+    "class-variance-authority": "^0.7.0",
+    "clsx": "^2.1.1",
+    "html2canvas": "^1.4.1",
+    "lucide-react": "^0.452.0",
+    "next": "14.2.15",
+    "next-themes": "^0.3.0",
+    "pdfjs-dist": "^4.7.76",
+    "react": "^18",
+    "react-dom": "^18",
+    "react-icons": "^5.3.0",
+    "recharts": "^2.13.0",
+    "tailwind-merge": "^2.6.0",
+    "tailwindcss-animate": "^1.0.7"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "@types/react": "^18",
+    "@types/react-dom": "^18",
+    "@types/uuid": "^10.0.0",
+    "concurrently": "^8.2.2",
+    "eslint": "^8",
+    "eslint-config-next": "14.2.15",
+    "kill-port": "^2.0.1",
+    "postcss": "^8",
+    "tailwindcss": "^3.4.1",
+    "typescript": "^5"
+  }
+}

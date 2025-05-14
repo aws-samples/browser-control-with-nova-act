@@ -1,0 +1,9 @@
+[
+  {
+    "id": "default-mcp-1",
+    "name": "MCP Server (Local)",
+    "hostname": "localhost:8000",
+    "isActive": true,
+    "isConnected": true
+  }
+]
