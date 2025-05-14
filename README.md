@@ -161,7 +161,7 @@ MAX_SUPERVISOR_TURNS = 4  # Maximum conversation turns between supervisor and ag
 MAX_AGENT_TURNS = 6  # Maximum turns between agent and MCP tools
 ```
 
-Only models with Tool Use and multimodal capabilities are compatible with Browser Control With Nova Act. Claude Sonnet 3.7 and Sonnet 3.5 work best for optimal performance. While Nova models can work, they occasionally encounter errors with tool use formatting.
+Only models with Tool Use and multimodal capabilities are compatible with Browser Control With Nova Act. Claude Sonnet 3.7, Nova Premier and Sonnet 3.5 work best for optimal performance. Other models haven't been tested.
 
 ## Running the Application
 
@@ -172,7 +172,7 @@ Only models with Tool Use and multimodal capabilities are compatible with Browse
 npm run dev
 ```
 
-Running `npm run dev` starts both the frontend application and the backend Nova MCP server simultaneously, providing a streamlined development experience.
+Running `npm run dev` starts both the frontend application and the backend Nova Act MCP server at once.
 
 The application will be available at http://localhost:3000
 
