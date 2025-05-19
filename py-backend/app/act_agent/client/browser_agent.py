@@ -1,7 +1,5 @@
 import asyncio
-import sys
 import os
-import base64
 import json
 from typing import Optional, Dict, Any
 from contextlib import AsyncExitStack

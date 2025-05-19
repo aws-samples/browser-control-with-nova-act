@@ -1,10 +1,8 @@
 import logging
 import asyncio
-import json
 import traceback
 import time
 from typing import Dict, Any, Optional
-import boto3
 from datetime import datetime
 
 from app.libs.prompts import DEFAULT_MODEL_ID

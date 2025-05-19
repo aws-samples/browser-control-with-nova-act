@@ -1,6 +1,4 @@
-import asyncio
 import base64
-import json
 import boto3
 import logging
 from typing import Dict, Any, Optional, List
