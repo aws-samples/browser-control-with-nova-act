@@ -89,11 +89,10 @@ async def act(instruction: str) -> Dict[str, Any]:
                    Good examples:
                    - "Click the blue 'Sign Up' button in the top right corner"
                    - "Type 'hiking boots' into the search box with placeholder 'Search products'"
-                   - "Scroll down to see more content below the product grid"
-                   - "Click on the red 'Add to Cart' button next to the $59.99 price tag"
+                   - "Click the 'State' dropdown, then type 'California'" (since it's long scroll)
+                   - "First hover over the dropdown menu, then scroll down to find 'Option B'"
                    
-                   Avoid instructions that reference elements not currently visible on screen
-                   or that require assumptions about page structure.
+                   For dropdowns: Click to open first, then type for long lists instead of scrolling.
     """
     try:
         browser = get_browser_controller()

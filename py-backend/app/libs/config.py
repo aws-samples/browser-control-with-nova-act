@@ -5,7 +5,7 @@ import os
 DEFAULT_MODEL_ID = "us.anthropic.claude-3-7-sonnet-20250219-v1:0"
 
 # Conversation flow settings
-MAX_SUPERVISOR_TURNS = 4  # Maximum conversation turns between supervisor and agent
+MAX_SUPERVISOR_TURNS = 10  # Maximum conversation turns between supervisor and agent
 MAX_AGENT_TURNS = 6       # Maximum turns between agent and MCP tools
 BROWSER_MAX_STEPS = int(os.environ.get("NOVA_BROWSER_MAX_STEPS", "3"))  # Maximum turns between Nova Act and Browser
 
@@ -19,7 +19,7 @@ BROWSER_TIMEOUT = int(os.environ.get("NOVA_BROWSER_TIMEOUT", "100"))
 BROWSER_URL_TIMEOUT = int(os.environ.get("NOVA_BROWSER_URL_TIMEOUT", "60"))
 
 # Browser settings - Profiles
-BROWSER_USER_DATA_DIR = os.environ.get("NOVA_BROWSER_USER_DATA_DIR", "")
+BROWSER_USER_DATA_DIR = os.environ.get("NOVA_BROWSER_USER_DATA_DIR", "/Users/kevmyung/Downloads/test/nova_chrome_profile")
 BROWSER_CLONE_USER_DATA = os.environ.get("NOVA_BROWSER_CLONE_USER_DATA", "true").lower() == "true"
 
 # Browser settings - Media

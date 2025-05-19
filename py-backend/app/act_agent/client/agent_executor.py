@@ -50,18 +50,18 @@ class AgentExecutor:
                 )
                 
             # Sync browser URL if needed
-            if current_url and current_url.startswith("http"):
-                try:
-                    status_result = await self.browser_agent.session.call_tool("get_browser_info", {})
-                    browser_info = self.browser_agent.parse_response(status_result.content[0].text)
-                    browser_url = browser_info.get("current_url", "")
+            # if current_url and current_url.startswith("http"):
+            #     try:
+            #         status_result = await self.browser_agent.session.call_tool("get_browser_info", {})
+            #         browser_info = self.browser_agent.parse_response(status_result.content[0].text)
+            #         browser_url = browser_info.get("current_url", "")
                     
-                    if browser_url != current_url:
-                        print(f"Synchronizing browser state to URL: {current_url}")
-                        await self.browser_agent.session.call_tool("navigate", {"url": current_url})
-                        await asyncio.sleep(0.5)  # Brief delay after navigation
-                except Exception as e:
-                    print(f"URL sync failed: {e}")
+            #         if browser_url != current_url:
+            #             print(f"Synchronizing browser state to URL: {current_url}")
+            #             await self.browser_agent.session.call_tool("navigate", {"url": current_url})
+            #             await asyncio.sleep(0.5)  # Brief delay after navigation
+            #     except Exception as e:
+            #         print(f"URL sync failed: {e}")
             
             # Prepare message content
             message_content = [{"text": request}]
