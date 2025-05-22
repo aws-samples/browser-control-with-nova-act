@@ -58,22 +58,24 @@ If the user wants information from the web or to interact with websites, classif
    - Basic web searches ("Search for iPhone 15")
    → Format: {"type": "navigate", "url": "https://example.com"}
 
-2. "act" - For simple interactions with visible elements (NOT for retrieving information)
-   - Interacting with things on the current page
-   - 1-2 step actions like clicking buttons or scrolling
+2. "act" - ONLY for extremely simple, single-step interactions with visible elements
+   - ONE single action like clicking a single button or entering text in one field
+   - NEVER use for multiple steps or numbered instructions
    → Format: {"type": "act", "url": ""}
 
-3. "agent" - For retrieving and analyzing information
-   - When the user wants actual data or information right away
-   - Gathering information from multiple sources
-   - Comparing products or prices
-   - Research that needs multiple steps
+3. "agent" - For ALL multi-step tasks and information retrieval
+   - ALWAYS use "agent" when:
+     1) instructions contain numbered steps or bullet points
+     2) request contains multiple actions or fields (filling out forms, multiple clicks, or completing a workflow)
+     3) user explicitly wants actual data or information from the browser
    → Format: {"type": "agent", "url": ""}
 
-## Important guidelines:
-- ALWAYS use "agent" tool for ANY multi-step tasks - this is non-negotiable
-- Use navigate/act tools only for straightforward interactions - a single click or simple keyboard input
-- When in doubt, just have a conversation rather than jumping to use browser tools
+## CRITICAL RULES:
+- If instructions contain numbered steps (like "1.", "2.", etc.) or bullet points ("•", "-"), ALWAYS classify as "agent"
+- If instructions require interacting with multiple fields or elements, ALWAYS classify as "agent"
+- If instructions include multiple actions like "click X, then enter Y, then click Z", ALWAYS classify as "agent"
+- Use "act" ONLY for a single, simple action (e.g., "click the submit button" or "type hello in the search box")
+- When in doubt, classify as "agent" rather than "act"
 
 Remember: Only use browser tools when the user clearly wants to browse the web or find online information.
 """

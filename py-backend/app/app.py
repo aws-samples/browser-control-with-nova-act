@@ -32,8 +32,6 @@ logging.getLogger('thought_stream').setLevel(logging.WARNING)
 
 app = FastAPI(title="Nova Act Agent API")
 
-nova_act_instance = None
-
 mcp_processes = {}
 
 app.include_router(thought_stream.router, prefix="/api/assistant", tags=["Thought Stream"])
@@ -54,33 +52,43 @@ async def health_check():
 
 @app.on_event("shutdown")
 async def shutdown_event():
-    global mcp_processes
-    logger.info("Shutting down Nova Act Agent and all MCP servers...")
-
+    logger.info("Application shutting down - cleaning up resources...")
     try:
-        await agent_manager.close_all()
-        logger.info("Successfully closed all ActAgent instances")
-    except Exception as e:
-        logger.error(f"Error closing ActAgent instances: {str(e)}")
-        logger.error(traceback.format_exc())
+        await asyncio.wait_for(safe_shutdown(), timeout=5.0)
+    except asyncio.TimeoutError:
+        logger.warning("Shutdown timed out, forcing resource cleanup")
+        force_cleanup()
+    
+    logger.info("Shutdown complete")
 
-    for server_name, process in mcp_processes.items():
-        if process and process.poll() is None: 
-            try:
-                logger.info(f"Terminating {server_name} MCP server")
+async def safe_shutdown():
+    try:
+        await asyncio.wait_for(agent_manager.close_all(), timeout=3.0)
+    except asyncio.TimeoutError:
+        logger.warning("Agent manager close timed out")
+    
+    for process_id, process in list(mcp_processes.items()):
+        try:
+            if process and process.poll() is None:
                 process.terminate()
                 try:
-                    process.wait(timeout=3)
-                except subprocess.TimeoutExpired:
-                    logger.warning(f"{server_name} server didn't terminate gracefully, forcing...")
-                    process.kill()
-                    process.wait(timeout=1)
-                logger.info(f"{server_name} server terminated")
-            except Exception as e:
-                logger.error(f"Error terminating {server_name} server: {str(e)}")
-    
-    mcp_processes = {}
-    logger.info("Nova Act Agent and MCP servers shutdown complete")
+                    await asyncio.wait_for(
+                        asyncio.to_thread(process.wait), 
+                        timeout=1.0
+                    )
+                except asyncio.TimeoutError:
+                    logger.warning(f"Process {process_id} termination timed out, killing")
+                    process.kill()  
+        except Exception as e:
+            logger.error(f"Error terminating process {process_id}: {str(e)}")
+
+def force_cleanup():
+    for process_id, process in list(mcp_processes.items()):
+        try:
+            if process and process.poll() is None:
+                process.kill()
+        except:
+            pass
 
 @app.on_event("startup")
 async def startup_event():
@@ -123,7 +131,6 @@ async def startup_event():
             logger.error(traceback.format_exc())
             raise RuntimeError(error_msg)
         
-        global nova_act_instance
         # Default values for model_id and region for the global agent
         nova_act_instance = await agent_manager.initialize_global_agent(
             server_path=paths["server_path"], 

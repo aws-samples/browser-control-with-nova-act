@@ -5,6 +5,8 @@ import logging
 import traceback
 import base64
 import json
+import signal
+import concurrent.futures
 from typing import Dict, Any, Optional, List
 from fastmcp import FastMCP
 from browser_controller import BrowserController
@@ -20,6 +22,8 @@ logger = logging.getLogger("browser_mcp")
 mcp = FastMCP("browser-automation", version="0.1.0")
 
 _browser_controller = None
+_shutdown_event = None
+_is_shutting_down = False
 
 def format_log_response(response_data):
     if isinstance(response_data, dict):
@@ -36,7 +40,7 @@ def format_log_response(response_data):
 
 def get_browser_controller() -> BrowserController:
     global _browser_controller
-    if _browser_controller is None:
+    if _browser_controller is None and not _is_shutting_down:
         _browser_controller = BrowserController()
     return _browser_controller
 
@@ -333,11 +337,13 @@ async def close_browser() -> Dict[str, Any]:
                 "status": "not_initialized",
                 "message": "Browser was not initialized"
             }
-        
+
         success = await asyncio.to_thread(browser.close)
         
         global _browser_controller
         _browser_controller = None
+        
+        await asyncio.sleep(0.5)
         
         return {
             "status": "success" if success else "error",
@@ -407,6 +413,149 @@ async def take_screenshot(max_width: int = 800, quality: int = 70) -> Dict[str, 
             "screenshot": None
         }
 
+def cleanup_resources_sync():
+    """
+    Synchronously cleanup resources to handle abrupt termination
+    """
+    global _browser_controller, _is_shutting_down
+    _is_shutting_down = True
+    
+    if _browser_controller is not None:
+        try:
+            logger.info("Closing browser synchronously...")
+            if hasattr(_browser_controller, 'close'):
+                _browser_controller.close()
+            _browser_controller = None
+            logger.info("Browser closed successfully")
+        except Exception as e:
+            logger.error(f"Error closing browser: {str(e)}")
+            _browser_controller = None
+    
+    logger.info("Sync cleanup completed")
+
+# Use ThreadPoolExecutor for timeout-safe shutdown
+async def shutdown_server(timeout=5.0):
+    """
+    Gracefully shutdown the server and clean up resources with timeout
+    """
+    global _browser_controller, _is_shutting_down, _shutdown_event
+    import threading
+    logger.info(f"Shutdown starting in thread ID: {threading.get_ident()}")
+
+    if _is_shutting_down:
+        logger.info("Shutdown already in progress, skipping")
+        return
+        
+    logger.info(f"Starting graceful shutdown with {timeout}s timeout...")
+    _is_shutting_down = True
+    
+    try:
+        for task in asyncio.all_tasks():
+            if task is not asyncio.current_task():
+                task.cancel()
+    except Exception as e:
+        logger.error(f"Error cancelling tasks: {str(e)}")
+    
+    if _browser_controller is not None:
+        try:
+            logger.info("Closing browser...")
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                future = executor.submit(cleanup_resources_sync)
+                try:
+                    await asyncio.wait_for(
+                        asyncio.wrap_future(future),
+                        timeout=timeout
+                    )
+                except (asyncio.TimeoutError, Exception) as e:
+                    logger.error(f"Browser close problem: {str(e)}")
+        finally:
+            _browser_controller = None
+    
+    if _shutdown_event:
+        _shutdown_event.set()
+    
+    logger.info("Shutdown completed")
+
+def register_exit_handlers():
+    def sync_signal_handler(signum, frame):
+        global _is_shutting_down
+        if _is_shutting_down:
+            logger.info("Already shutting down, ignoring signal")
+            return
+            
+        logger.info(f"Received signal {signum}, cleaning up synchronously")
+        _is_shutting_down = True
+        
+        cleanup_resources_sync()
+        
+        if signum == signal.SIGINT:
+            logger.info("Exit due to SIGINT")
+            sys.exit(130)  # 128 + 2 (SIGINT)
+        elif signum == signal.SIGTERM:
+            logger.info("Exit due to SIGTERM")
+            sys.exit(143)  # 128 + 15 (SIGTERM)
+    
+    signal.signal(signal.SIGINT, sync_signal_handler)
+    signal.signal(signal.SIGTERM, sync_signal_handler)
+
+async def async_main(args):
+    # Create shutdown event
+    global _shutdown_event
+    _shutdown_event = asyncio.Event()
+    
+    # Register synchronous cleanup handlers
+    register_exit_handlers()
+    
+    # Set up asyncio signal handlers for graceful shutdown
+    try:
+        loop = asyncio.get_running_loop()
+        for sig in (signal.SIGINT, signal.SIGTERM):
+            loop.add_signal_handler(
+                sig,
+                lambda s=sig: asyncio.create_task(
+                    shutdown_server(timeout=1.0)
+                )
+            )
+    except NotImplementedError:
+        # Signal handlers not available on this platform (e.g., Windows)
+        logger.warning("Asyncio signal handlers not available on this platform")
+    except Exception as e:
+        logger.error(f"Error setting up signal handlers: {str(e)}")
+    
+    try:
+        logger.info("Starting MCP server...")
+        if args.transport == "stdio":
+            # Run in stdio mode with short timeout
+            await asyncio.wait_for(
+                mcp.run_async(transport="stdio"),
+                timeout=None  # No timeout for the main task
+            )
+        else:
+            # Run in HTTP mode with short timeout
+            await asyncio.wait_for(
+                mcp.run_async(transport="http", host=args.host, port=args.port),
+                timeout=None  # No timeout for the main task
+            )
+    except asyncio.CancelledError:
+        logger.info("MCP server operation cancelled")
+    except asyncio.TimeoutError:
+        logger.warning("MCP server startup timed out")
+    except Exception as e:
+        logger.error(f"Error running MCP server: {str(e)}")
+        return 1
+    finally:
+        # Quick shutdown with very short timeout
+        try:
+            await asyncio.wait_for(shutdown_server(timeout=0.5), timeout=0.8)
+        except (asyncio.TimeoutError, asyncio.CancelledError):
+            logger.info("Shutdown procedure timed out or was cancelled")
+            cleanup_resources_sync()  # Fall back to sync cleanup
+        except Exception as e:
+            logger.error(f"Error during shutdown: {str(e)}")
+            cleanup_resources_sync()  # Fall back to sync cleanup
+    
+    return 0
+
 def main():
     import argparse
     
@@ -425,13 +574,19 @@ def main():
     if args.verbose:
         logger.setLevel(logging.INFO)
     
+    # Use asyncio.run with very short timeout for the entire operation
     try:
-        if args.transport == "stdio":
-            mcp.run(transport="stdio")
-        else:
-            mcp.run(transport="http", host=args.host, port=args.port)
+        # Handle KeyboardInterrupt before it reaches asyncio.run()
+        exit_code = asyncio.run(async_main(args))
+        sys.exit(exit_code)
+    except KeyboardInterrupt:
+        logger.info("Keyboard interrupt detected")
+        cleanup_resources_sync()
+        sys.exit(0)
     except Exception as e:
-        logger.error(f"Error running MCP server: {str(e)}")
+        logger.error(f"Unhandled exception: {str(e)}")
+        traceback.print_exc()
+        cleanup_resources_sync()
         sys.exit(1)
 
 if __name__ == "__main__":

@@ -5,13 +5,13 @@ import asyncio
 import time
 import logging
 import traceback
+
 from app.libs.thought_stream import thought_handler
-from app.libs.utils import get_or_create_session_id, register_session_and_thought_handler
+from app.services.session_service import session_service
 from app.libs.decorators import with_thought_callback, log_thought
 from app.libs.task_supervisor import TaskSupervisor
 from app.libs.conversation_store import FileConversationStore, MemoryConversationStore
 from app.libs.conversation_manager import ConversationManager
-from app.libs.utils import setup_paths
 from app.libs.config import CONVERSATION_STORAGE_TYPE, CONVERSATION_FILE_TTL_DAYS, CONVERSATION_CLEANUP_INTERVAL
 from pathlib import Path
 
@@ -66,32 +66,32 @@ async def router_api(request: Request, background_tasks: BackgroundTasks):
         
         # Extract request data with debugging
         messages = data.get("messages", [])
-        
         model = data.get("model", "")
         region = data.get("region", "")
         
+        # Session handling: validate existing or create new
         input_session_id = data.get("session_id")
+        if input_session_id and session_service.get_session(input_session_id):
+            session_id = input_session_id
+            logger.info(f"Using existing session: {session_id}")
+        else:
+            session_id = session_service.create_session()
+            logger.info(f"Created new session: {session_id}")
         
-        # Get or create session ID
-        session_id = get_or_create_session_id(input_session_id)
-        
-        # Register session handler
-        register_session_and_thought_handler(session_id)
+        # Register session in thought handler
+        thought_handler.register_session(session_id)
         
         if not messages or not isinstance(messages, list):
-            logger.error(f"[DEBUG] Invalid messages format: {messages}")
+            logger.error(f"Invalid messages format: {messages}")
             raise HTTPException(status_code=400, detail="Messages are required and must be a non-empty array")
         
         # Extract the user message
         user_message = ""
         for i, msg in enumerate(reversed(messages)):
             if msg.get('role') == 'user':
-                
                 if isinstance(msg.get('content'), str):
                     user_message = msg.get('content')
-                    
                 elif isinstance(msg.get('content'), list):
-                    
                     for content_item in msg.get('content', []):
                         if isinstance(content_item, dict) and 'text' in content_item:
                             user_message = content_item['text']
@@ -99,9 +99,8 @@ async def router_api(request: Request, background_tasks: BackgroundTasks):
                 break
         
         if not user_message:
-            logger.error("[DEBUG] No user message found in the request")
+            logger.error("No user message found in the request")
             raise HTTPException(status_code=400, detail="No user message found")
-        
         
         background_tasks.add_task(
             process_request,
