@@ -8,7 +8,9 @@ from mcp.client.stdio import stdio_client
 import signal
 import subprocess
 import time
+import logging
 
+logger = logging.getLogger("browser_agent")
 class BrowserAgent:
     def __init__(self, server_config=None):
         self.session: Optional[ClientSession] = None
@@ -16,6 +18,7 @@ class BrowserAgent:
         self.browser_initialized = False
         self.initial_screenshot = None
         self.server_config = server_config or {}
+        self.session_id = self.server_config.get("session_id")
     
     def parse_response(self, response_text):
         if isinstance(response_text, str):
@@ -66,12 +69,15 @@ class BrowserAgent:
             start_new_session=True 
         )
         
-        # Register process for global management
+        # Register process with session ID instead of generated ID
         try:
             from app.app import mcp_processes
-            server_id = f"nova-act-server-{id(self)}"
+            
+            # Use the provided session_id or fall back to generated ID
+            server_id = self.server_config.get("session_id") or f"nova-act-server-{id(self)}"
             mcp_processes[server_id] = self._server_process
-            print(f"Registered server process with ID: {server_id}")
+            logger.info(f"Registered server process with ID: {server_id}")
+            
         except ImportError:
             import atexit
             atexit.register(self._terminate_server)
@@ -84,7 +90,7 @@ class BrowserAgent:
 
         # List available tools
         response = await self.session.list_tools()
-        print("\nConnected to server with tools:", [tool.name for tool in response.tools])
+        logger.info(f"Connected to server with tools: {[tool.name for tool in response.tools]}")
 
     def _terminate_server(self):
         if not hasattr(self, '_server_process') or not self._server_process:
@@ -199,9 +205,11 @@ class BrowserAgent:
             await self.close_browser()
         except Exception as e:
             print(f"Error during browser cleanup: {e}")
-            
+        await asyncio.sleep(0.5)
+
         try:
-            await self.exit_stack.aclose()
+            if hasattr(self, 'session') and self.session:
+                await self.exit_stack.aclose()
         except Exception as e:
             print(f"Error closing MCP client: {e}")
 

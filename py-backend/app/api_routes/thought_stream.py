@@ -1,8 +1,8 @@
 from fastapi import APIRouter, Request, HTTPException
 from fastapi.responses import StreamingResponse
 from app.libs.thought_stream import thought_handler
+from app.services.session_service import session_service
 import logging
-import asyncio
 
 logger = logging.getLogger("thought_stream_api")
 
@@ -13,11 +13,17 @@ async def stream_thoughts(session_id: str):
     """Stream thought processes for a specific session"""
     try:
         logger.info(f"SSE connection request for session: {session_id}")
+        
+        # Validate session exists in session service
+        session = session_service.get_session(session_id)
+        if not session:
+            logger.warning(f"SSE connection attempt for invalid session: {session_id}")
+            return HTTPException(status_code=404, detail="Session not found")
+            
+        # Register session in thought handler if needed
         if session_id not in thought_handler.queues:  
-            logger.warning(f"SSE connection attempt for unknown session: {session_id}")
-            logger.info(f"Auto-registering session: {session_id}")
+            logger.info(f"Registering valid session: {session_id}")
             thought_handler.register_session(session_id)
-            logger.info(f"Session {session_id} registered successfully")
         else:
             logger.info(f"Valid session found with {thought_handler.queues[session_id].qsize()} thoughts queued") 
         

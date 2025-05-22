@@ -1,4 +1,5 @@
 import logging
+import asyncio
 from typing import Dict, Any, Optional
 from app.act_agent.client.browser_agent import BrowserAgent
 from app.act_agent.client.agent_executor import AgentExecutor
@@ -20,7 +21,12 @@ class ActAgentManager:
         return cls._instance
     
     async def initialize_global_agent(self, server_path: str, headless: bool = False, model_id: str = None, region: str = None) -> BrowserAgent:
-        server_config = {}
+        global_session_id = "global-startup"
+        
+        server_config = {
+            "session_id": global_session_id  # Add session ID to config
+        }
+        
         if model_id:
             server_config["model_id"] = model_id
         if region:
@@ -72,8 +78,11 @@ class ActAgentManager:
         # Create new agent
         self._logger.info(f"Creating new BrowserAgent for session {session_id}")
         
-        # Setup configuration
-        server_config = {}
+        # Setup configuration with session ID
+        server_config = {
+            "session_id": session_id  # Add session ID to config
+        }
+        
         if model_id:
             server_config["model_id"] = model_id
         if region:
@@ -138,5 +147,32 @@ class ActAgentManager:
         except Exception as e:
             self._logger.error(f"Error closing agent for session {session_id}: {str(e)}")
             return False
+
+
+    async def close_all(self):
+        """Close all browser agents and clean up resources"""
+        self._logger.info(f"Closing all browser agents: {len(self._browser_agents)} agents")
+        closing_tasks = []
+
+        # Make a copy of the session IDs to avoid dict size change during iteration
+        session_ids = list(self._browser_agents.keys())
+        
+        for session_id in session_ids:
+            try:
+                self._logger.info(f"Closing agent for session {session_id}")
+                closing_tasks.append(self.close_agent(session_id))
+            except Exception as e:
+                self._logger.error(f"Error preparing to close agent for session {session_id}: {str(e)}")
+        
+        if closing_tasks:
+            try:
+                await asyncio.gather(*closing_tasks, return_exceptions=True)
+            except (asyncio.CancelledError, KeyboardInterrupt):
+                self._logger.warning("Agent closing was interrupted")
+            except Exception as e:
+                self._logger.error(f"Error during agent closing: {str(e)}")
+        
+        self._logger.info("All browser agents have been closed")
+
 
 agent_manager = ActAgentManager()

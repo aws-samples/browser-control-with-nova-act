@@ -2,6 +2,7 @@ import os
 import base64
 import tempfile
 import logging
+import traceback
 from typing import Dict, Any, Optional, Tuple
 from nova_act import NovaAct
 from nova_act_config import DEFAULT_BROWSER_SETTINGS
@@ -169,14 +170,39 @@ class BrowserController:
             return "Error getting content"
     
     def close(self) -> bool:
-        if not self.nova:
+        if not hasattr(self, 'nova') or self.nova is None:
+            logger.info("Browser already closed or not initialized")
             return True
             
         try:
-            self.nova.close()
+            logger.info("Attempting to close browser")
+            
+            nova_instance = self.nova
             self.nova = None
+            
+            import threading
+            current_thread_id = threading.get_ident()
+            logger.info(f"Close attempting in thread ID: {current_thread_id}")
+            
+            try:
+                if hasattr(nova_instance, "stop") and callable(getattr(nova_instance, "stop")):
+                    try:
+                        nova_instance._playwright.stop()
+                    except Exception as e_pw:
+                        logger.warning(f"Non-critical error stopping Playwright: {str(e_pw)}")
+                    
+                    nova_instance._dispatcher = None
+                    logger.info("Browser resources cleaned up")
+                else:
+                    logger.warning("No proper close method found")
+            except Exception as e:
+                logger.error(f"Error during browser close operation: {str(e)}")
+                logger.error(f"Exception type: {type(e).__name__}")
+                logger.error(f"Exception traceback: {traceback.format_exc()}")
+            
             return True
             
         except Exception as e:
-            logger.error(f"Error closing browser: {str(e)}")
+            logger.error(f"Critical error in close method: {str(e)}")
+            logger.error(f"Exception traceback: {traceback.format_exc()}")
             return False
