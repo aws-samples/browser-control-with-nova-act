@@ -3,7 +3,9 @@ import { apiRequest } from '@/utils/api';
 import { toast } from "@/hooks/use-toast";
 import { readFileAsText, readFileAsBase64, readFileAsPDFText } from "@/utils/fileHandling";
 import type { Message, FileUpload, AnalyzeAPIResponse, APIResponse } from '@/types/chat';
-import { subscribeToEvent } from '@/services/eventService';
+import { subscribeToEvent, dispatchEvent } from '@/services/eventService';
+import { createLogger } from '@/utils/logger';
+import { ErrorHandler } from '@/utils/errorHandler';
 import {
   prepareApiMessages,
   createUserMessage,
@@ -11,6 +13,8 @@ import {
   createErrorMessage,
   createVisualizationMessage
 } from '@/utils/messageUtils';
+
+const logger = createLogger('useChat');
 
 interface ChatState {
   messages: Message[];
@@ -202,11 +206,8 @@ export const useChat = (selectedModel: string, selectedRegion: string): UseChatR
   
       if (responseSessionId) {
         setSessionId(responseSessionId);
-        if (typeof window !== 'undefined') {
-          window.localStorage.setItem('session_id', responseSessionId);
-        }
       } else {
-        console.warn('Missing sessionId in response');
+        logger.warn('Missing sessionId in response', { responseData });
       }
       
       if (directAnswer && directAnswer !== "processing") {
@@ -227,7 +228,7 @@ export const useChat = (selectedModel: string, selectedRegion: string): UseChatR
         setMessages(prev => [...prev, message]);
         setIsThinking(false);
       } else {
-        console.log(`Received 'processing' response for ${responseSessionId}, waiting for SSE stream...`);
+        logger.info('Received processing response, waiting for SSE stream', { sessionId: responseSessionId });
       }
     
       return { analyzeTime: 0 };
@@ -240,11 +241,8 @@ export const useChat = (selectedModel: string, selectedRegion: string): UseChatR
   
       if (responseSessionId) {
         setSessionId(responseSessionId);
-        if (typeof window !== 'undefined') {
-          window.localStorage.setItem('session_id', responseSessionId);
-        }
       } else {
-        console.warn('Missing sessionId in response');
+        logger.warn('Missing sessionId in response', { responseData });
       }
       
       if (directAnswer && directAnswer !== "processing") {
@@ -265,7 +263,7 @@ export const useChat = (selectedModel: string, selectedRegion: string): UseChatR
         setMessages(prev => [...prev, message]);
         setIsThinking(false);
       } else {
-        console.log(`Received 'processing' response for ${responseSessionId}, waiting for SSE stream...`);
+        logger.info('Received processing response, waiting for SSE stream', { sessionId: responseSessionId });
       }
     
       return { analyzeTime: 0 };
@@ -278,11 +276,8 @@ export const useChat = (selectedModel: string, selectedRegion: string): UseChatR
   
       if (responseSessionId) {
         setSessionId(responseSessionId);
-        if (typeof window !== 'undefined') {
-          window.localStorage.setItem('session_id', responseSessionId);
-        }
       } else {
-        console.warn('Missing sessionId in response');
+        logger.warn('Missing sessionId in response', { responseData });
       }
       
       if (directAnswer && directAnswer !== "processing") {
@@ -303,7 +298,7 @@ export const useChat = (selectedModel: string, selectedRegion: string): UseChatR
         setMessages(prev => [...prev, message]);
         setIsThinking(false);
       } else {
-        console.log(`Received 'processing' response for ${responseSessionId}, waiting for SSE stream...`);
+        logger.info('Received processing response, waiting for SSE stream', { sessionId: responseSessionId });
       }
     
       return { analyzeTime: 0 };
@@ -324,12 +319,25 @@ export const useChat = (selectedModel: string, selectedRegion: string): UseChatR
     }
     
     const timestamp = new Date().toISOString();
+    const userInput = input; // Store input before clearing
     const userMessage = {
-      ...createUserMessage(input, currentUpload || undefined),
+      ...createUserMessage(userInput, currentUpload || undefined),
       timestamp
     };
     
     setMessages(prev => [...prev, userMessage]);
+    
+    // Dispatch user message immediately to thought process
+    dispatchEvent.userMessageAdded({
+      type: 'question',
+      content: userInput,
+      node: 'User',
+      category: 'user_input',
+      timestamp,
+      sessionId: sessionId || '', // Empty string if no sessionId yet
+      fileUpload: currentUpload || undefined
+    });
+    
     setInput("");
     setIsLoading(true);
   
@@ -352,7 +360,7 @@ export const useChat = (selectedModel: string, selectedRegion: string): UseChatR
       }
       
       const responseData = await routerResponse.json();
-      console.log("Router API response:", responseData);
+      logger.debug('Router API response received', { responseData });
       
       answeringTool = responseData.input?.answering_tool || 'chat';
       
@@ -381,8 +389,21 @@ export const useChat = (selectedModel: string, selectedRegion: string): UseChatR
       }
       
     } catch (error) {
-      console.error("Submit Error:", error);
-      setMessages(prev => [...prev, createErrorMessage()]);
+      const standardError = ErrorHandler.handleError(error, 'chat_submission', {
+        showToast: true,
+        toast,
+        showDetails: true,
+        showRetry: true
+      });
+      
+      // Create error message with structured error information
+      const errorMessage = createErrorMessage(standardError.message);
+      if (errorMessage.technical_details) {
+        errorMessage.technical_details.error_code = standardError.error_code;
+        errorMessage.technical_details.severity = standardError.severity;
+      }
+      
+      setMessages(prev => [...prev, errorMessage]);
       setIsThinking(false);
     } finally {
       setIsLoading(false);
@@ -427,7 +448,7 @@ export const useChat = (selectedModel: string, selectedRegion: string): UseChatR
           base64Data = btoa(encodeURIComponent(pdfText));
           isText = true;
         } catch (error) {
-          console.error("Failed to parse PDF:", error);
+          logger.error('Failed to parse PDF', { fileName: file.name, error: error instanceof Error ? error.message : error }, error instanceof Error ? error : undefined);
           toast({
             title: "PDF parsing failed",
             description: "Unable to extract text from the PDF",
@@ -441,7 +462,7 @@ export const useChat = (selectedModel: string, selectedRegion: string): UseChatR
           base64Data = btoa(encodeURIComponent(textContent));
           isText = true;
         } catch (error) {
-          console.error("Failed to read as text:", error);
+          logger.error('Failed to read file as text', { fileName: file.name, fileType: file.type, error: error instanceof Error ? error.message : error }, error instanceof Error ? error : undefined);
           toast({
             title: "Invalid file type",
             description: "File must be readable as text, PDF, or be an image",
@@ -463,7 +484,7 @@ export const useChat = (selectedModel: string, selectedRegion: string): UseChatR
         description: `${file.name} ready to analyze`,
       });
     } catch (error) {
-      console.error("Error processing file:", error);
+      logger.error('Error processing file', { fileName: file?.name, error: error instanceof Error ? error.message : error }, error instanceof Error ? error : undefined);
       toast({
         title: "Upload failed",
         description: "Failed to process the file",

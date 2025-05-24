@@ -5,12 +5,13 @@ import time
 from typing import Dict, Any, Optional
 from datetime import datetime
 
-from app.libs.prompts import DEFAULT_MODEL_ID
-from app.libs.decorators import log_thought
-from app.libs.task_classifier import TaskClassifier
-from app.libs.task_executors import NavigationExecutor, ActionExecutor, AgentOrchestrator
-from app.libs.conversation_store import ConversationStore, MemoryConversationStore, FileConversationStore
-from app.libs.conversation_manager import ConversationManager
+from app.libs.config.prompts import DEFAULT_MODEL_ID
+from app.libs.utils.decorators import log_thought
+from app.libs.core.task_classifier import TaskClassifier
+from app.libs.core.task_executors import NavigationExecutor, ActionExecutor, AgentOrchestrator
+from app.libs.data.conversation_store import ConversationStore, MemoryConversationStore, FileConversationStore
+from app.libs.data.conversation_manager import ConversationManager
+from app.libs.core.agent_manager import AgentManager
 
 # Set up logger with more verbose level for debugging
 logger = logging.getLogger("task_supervisor")
@@ -27,16 +28,17 @@ class TaskSupervisor:
     def __init__(self, 
                  model_id: str = DEFAULT_MODEL_ID, 
                  region: str = "us-west-2",
-                 conversation_store: Optional[ConversationStore] = None):
+                 conversation_store: Optional[ConversationStore] = None,
+                 agent_manager: Optional[AgentManager] = None):
         
         self.model_id = model_id
         self.region = region
         
         # Initialize components
         self.task_classifier = TaskClassifier(model_id, region)
-        self.navigation_executor = NavigationExecutor(model_id, region)
-        self.action_executor = ActionExecutor(model_id, region)
-        self.agent_orchestrator = AgentOrchestrator(model_id, region)
+        self.navigation_executor = NavigationExecutor(model_id, region, agent_manager)
+        self.action_executor = ActionExecutor(model_id, region, agent_manager)
+        self.agent_orchestrator = AgentOrchestrator(model_id, region, agent_manager)
         
         # Set default conversation store if none provided
         self.conversation_store = conversation_store or MemoryConversationStore()
@@ -44,23 +46,23 @@ class TaskSupervisor:
         # Initialize conversation manager
         self.conversation_manager = ConversationManager(self.conversation_store)
     
-    async def classify_task(self, user_message: str, session_id: str) -> Dict[str, Any]:
-        """Classify a user message into an appropriate task type."""
+    # async def classify_task(self, user_message: str, session_id: str) -> Dict[str, Any]:
+    #     """Classify a user message into an appropriate task type."""
         
-        # Get the current conversation history to provide context for classification
-        messages = await self.conversation_manager.get_conversation_history(session_id)
-        classification = await self.task_classifier.classify(user_message, session_id, messages)
+    #     # Get the current conversation history to provide context for classification
+    #     messages = await self.conversation_manager.get_conversation_history(session_id)
+    #     classification = await self.task_classifier.classify(user_message, session_id, messages)
         
-        # If not agent type, add a classification message to conversation
-        if classification.get('type') != "agent":
-            classification_message = f"I'll handle this as a {classification.get('type', 'unknown')} task."
-            await self.conversation_manager.add_assistant_message(
-                session_id=session_id, 
-                content=classification_message, 
-                source="classification"
-            )
+    #     # If not agent type, add a classification message to conversation
+    #     if classification.get('type') != "agent":
+    #         classification_message = f"I'll handle this as a {classification.get('type', 'unknown')} task."
+    #         await self.conversation_manager.add_assistant_message(
+    #             session_id=session_id, 
+    #             content=classification_message, 
+    #             source="classification"
+    #         )
         
-        return classification
+    #     return classification
     
     async def navigate_execute(self, classification: Dict[str, Any], session_id: str, 
                              model_id: Optional[str] = None, region: Optional[str] = None) -> Dict[str, Any]:
@@ -165,15 +167,8 @@ class TaskSupervisor:
             # Ensure conversation session exists and add user message
             await self.conversation_manager.ensure_session(session_id)
             await self.conversation_manager.add_user_message(session_id, user_message)  
-                
-            log_thought(
-                session_id=session_id,
-                type_name="question",
-                category="user_input",
-                node="User",
-                content=user_message
-            )
 
+            # Log processing status without unnecessary sleep
             log_thought(
                 session_id=session_id,
                 type_name="processing", 
@@ -181,8 +176,9 @@ class TaskSupervisor:
                 node="Supervisor",
                 content=f"Processing user request..."
             )
-            await asyncio.sleep(0.5)
 
+            await asyncio.sleep(0.5)
+            
             # Update model and region if provided
             if model_id:
                 self.model_id = model_id
@@ -249,15 +245,16 @@ class TaskSupervisor:
             browser_url = None
             browser_state = None
             try:
-                from app.libs.task_executors import BaseTaskExecutor
+                from app.libs.core.task_executors import BaseTaskExecutor
                 base_executor = BaseTaskExecutor(model_id or self.model_id, region or self.region)
                 browser_state = await base_executor.get_browser_state(session_id)
                 if browser_state and browser_state.get("browser_initialized", False):
                     browser_url = browser_state.get("current_url", "")
 
-                    from app.libs.agent_manager import agent_manager
+                    from app.libs.core.agent_manager import get_agent_manager
+                    agent_manager = get_agent_manager()
                     if session_id and browser_url:
-                        agent_manager._browser_urls[session_id] = browser_url
+                        agent_manager._session_urls[session_id] = browser_url
 
             except Exception as e:
                 logger.error(f"Error getting browser state: {str(e)}")

@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Request, HTTPException
 from fastapi.responses import StreamingResponse
-from app.libs.thought_stream import thought_handler
-from app.services.session_service import session_service
+from app.libs.utils.thought_stream import thought_handler
+from app.libs.data.session_manager import get_session_manager
 import logging
 
 logger = logging.getLogger("thought_stream_api")
@@ -14,11 +14,10 @@ async def stream_thoughts(session_id: str):
     try:
         logger.info(f"SSE connection request for session: {session_id}")
         
-        # Validate session exists in session service
-        session = session_service.get_session(session_id)
-        if not session:
-            logger.warning(f"SSE connection attempt for invalid session: {session_id}")
-            return HTTPException(status_code=404, detail="Session not found")
+        # Create session if it doesn't exist (simple prototype approach)
+        session_manager = get_session_manager()
+        await session_manager.get_or_create_session(session_id)
+        logger.info(f"Session ready for SSE: {session_id}")
             
         # Register session in thought handler if needed
         if session_id not in thought_handler.queues:  

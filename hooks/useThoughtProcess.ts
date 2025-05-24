@@ -175,11 +175,11 @@ export function useThoughtProcess(sessionId?: string) {
     
     // Default case - catch all other callbacks
     const nodeType = data.node?.toLowerCase() || '';
-    let node = 'Others';
+    let nodeCategory = 'Others';
     
-    if (nodeType.includes('browser')) node = 'Browser';
-    else if (nodeType.includes('nova') || nodeType.includes('act')) node = 'NovaAct';
-    else if (nodeType.includes('agent') || nodeType.includes('llm')) node = 'Agent';
+    if (nodeType.includes('browser')) nodeCategory = 'Browser';
+    else if (nodeType.includes('nova') || nodeType.includes('act')) nodeCategory = 'NovaAct';
+    else if (nodeType.includes('agent') || nodeType.includes('llm')) nodeCategory = 'Agent';
     
     if (data.node === 'Others') {
       return {
@@ -196,11 +196,33 @@ export function useThoughtProcess(sessionId?: string) {
       ...data,
       id: generateId('thought'),
       type: data.type || 'reasoning',
-      node: 'Agent', 
+      node: nodeCategory, 
       content: data.content || data.message || '',
       timestamp: currentTimestamp
     } as Thought;
   }, [generateId]);
+  
+  // Handle direct user message additions
+  useEffect(() => {
+    const unsubscribeUserMessage = subscribeToEvent.userMessageAdded((detail) => {
+      // Add user message directly without sessionId check since this is frontend-only
+      const normalizedThought: Thought = {
+        id: generateId('user-question'),
+        type: 'question',
+        node: 'User',
+        category: 'user_input',
+        content: detail.content,
+        timestamp: detail.timestamp,
+        technical_details: detail.fileUpload ? { fileUpload: detail.fileUpload } : undefined
+      };
+      
+      updateThoughts(normalizedThought);
+    });
+    
+    return () => {
+      unsubscribeUserMessage();
+    };
+  }, [generateId, updateThoughts]);
   
 
   const handleEventData = useCallback((data: any) => {
@@ -239,14 +261,14 @@ export function useThoughtProcess(sessionId?: string) {
       }
       
       const validTypes = ['thought', 'reasoning', 'tool_call', 'tool_result', 'question', 
-                         'visualization', 'thinking', 'rationale', 'error'];
-      const validNodes = ['User', 'Browser', 'Agent', 'NovaAct', 'Answer'];
+                         'visualization', 'thinking', 'rationale', 'error', 'answer', 'result', 'browser_status'];
+      const validNodes = ['User', 'Browser', 'Agent', 'NovaAct', 'Answer', 'complete', 'Router'];
       
       if (!validTypes.includes(data.type) && 
           !validNodes.includes(data.node) && 
           data.category !== 'screenshot' &&
           data.category !== 'visualization_data') {
-        console.log("Filtered callback:", data.type, data.node);
+        console.log("Filtered callback:", data);
         return; 
       }
       
@@ -409,10 +431,15 @@ export function useThoughtProcess(sessionId?: string) {
         eventSourceRef.current.close();
       }
       
-      setThoughts([]);
+      // Only clear thoughts when switching to a completely different session
+      // Don't clear when first sessionId is set (previousSessionRef.current is undefined)
+      if (previousSessionRef.current !== undefined) {
+        setThoughts([]);
+        setScreenshots({});
+      }
+      
       setError(null);
       setIsComplete(false);
-      setScreenshots({});
       
       const newEventSource = setupEventSource(sessionId);
       if (newEventSource) {

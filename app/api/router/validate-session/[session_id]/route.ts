@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 
 // Configuration
-const BACKEND_URL = "http://localhost:8000/api/act/validate-session";
+const BACKEND_URL = "http://localhost:8000/api/router/validate-session";
 const MAX_RETRIES = 3;
 const RETRY_DELAY = 1000; // 1 second
 const REQUEST_TIMEOUT = 5000; // 5 seconds
@@ -42,25 +42,24 @@ export async function GET(req: NextRequest, { params }: { params: { session_id: 
       );
     }
     
-    // Since the backend endpoint likely doesn't exist yet, we'll return a successful response
-    // In a production environment, you would actually check with the backend
-    // const response = await fetchWithRetry(`${BACKEND_URL}/${session_id}`, {
-    //   method: "GET",
-    //   headers: { "Content-Type": "application/json" },
-    // });
-    // 
-    // if (!response.ok) {
-    //   return new Response(
-    //     JSON.stringify({ valid: false, message: `Invalid session: ${response.status}` }),
-    //     { status: 200, headers: { "Content-Type": "application/json" } }
-    //   );
-    // }
-    // 
-    // const data = await response.json();
+    // Validate session with backend
+    const response = await fetchWithRetry(`${BACKEND_URL}/${session_id}`, {
+      method: "GET",
+      headers: { "Content-Type": "application/json" },
+    });
     
-    // For now, just assume any session ID is valid
+    if (!response.ok) {
+      return new Response(
+        JSON.stringify({ valid: false, message: `Backend validation failed: ${response.status}` }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      );
+    }
+    
+    const data = await response.json();
+    
+    // Return the backend validation result
     return new Response(
-      JSON.stringify({ valid: true, message: "Session is valid" }),
+      JSON.stringify(data),
       { status: 200, headers: { "Content-Type": "application/json" } }
     );
   } catch (error) {

@@ -2,7 +2,10 @@ from fastapi import APIRouter, HTTPException, Body
 from typing import List, Dict, Optional, Any
 import json
 import os
+import logging
 from pydantic import BaseModel
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -41,7 +44,7 @@ def load_server_config() -> List[Dict[str, Any]]:
             save_server_config(DEFAULT_SERVERS)
             return DEFAULT_SERVERS
     except Exception as e:
-        print(f"Error loading MCP server config: {e}")
+        logger.error("Error loading MCP server config", extra={"error": str(e)})
         return DEFAULT_SERVERS
 
 def save_server_config(servers: List[Dict[str, Any]]) -> None:
@@ -49,7 +52,7 @@ def save_server_config(servers: List[Dict[str, Any]]) -> None:
         with open(MCP_SERVER_CONFIG_PATH, "w") as f:
             json.dump(servers, f, indent=2)
     except Exception as e:
-        print(f"Error saving MCP server config: {e}")
+        logger.error("Error saving MCP server config", extra={"error": str(e)})
 
 @router.get("/", response_model=List[MCPServer])
 async def get_mcp_servers():
@@ -87,5 +90,5 @@ async def test_mcp_server(request: ServerTestRequest = Body(...)):
                 response = await client.get(hostname)
                 return {"success": response.status_code < 400}
     except Exception as e:
-        print(f"MCP server connection test failed: {e}")
+        logger.error("MCP server connection test failed", extra={"error": str(e), "hostname": hostname})
         return {"success": False, "error": str(e)}

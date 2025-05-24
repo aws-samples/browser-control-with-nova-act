@@ -4,34 +4,34 @@ import time
 from datetime import datetime
 from typing import Dict, Any, Optional, List
 
-from app.libs.agent_manager import agent_manager
-from app.libs.utils import setup_paths
-from app.libs.decorators import log_thought
-from app.libs.browser_utils import BrowserUtils, BedrockClient
-from app.libs.prompts import SUPERVISOR_PROMPT, SUPERVISOR_TOOL
-from app.libs.config import BROWSER_HEADLESS, MAX_AGENT_TURNS, MAX_SUPERVISOR_TURNS
-from app.libs.message import Message
+from app.libs.core.agent_manager import AgentManager
+from app.libs.utils.utils import setup_paths
+from app.libs.utils.decorators import log_thought
+from app.libs.core.browser_utils import BrowserUtils, BedrockClient
+from app.libs.config.prompts import SUPERVISOR_PROMPT, SUPERVISOR_TOOL
+from app.libs.config.config import BROWSER_HEADLESS, MAX_AGENT_TURNS, MAX_SUPERVISOR_TURNS
+from app.libs.data.message import Message
+from app.libs.utils.error_handler import error_handler
 
 logger = logging.getLogger("task_executors")
 
 class BaseTaskExecutor:
-    def __init__(self, model_id: str, region: str):
+    def __init__(self, model_id: str, region: str, agent_manager: AgentManager = None):
         self.model_id = model_id
         self.region = region
         self.bedrock_client = BedrockClient(model_id, region)
+        # Use provided agent_manager or get the global instance
+        self.agent_manager = agent_manager or self._get_agent_manager()
+    
+    def _get_agent_manager(self):
+        """Get the global agent manager instance"""
+        from app.libs.core.agent_manager import get_agent_manager
+        return get_agent_manager()
     
     async def get_browser_state(self, session_id: str) -> Dict[str, Any]:
         """Get browser state from agent manager"""
-        from app.libs.agent_manager import agent_manager
-        
-        browser_agent = None
-        if session_id in agent_manager._browser_agents:
-            browser_agent = agent_manager._browser_agents[session_id]
-        elif agent_manager._global_agent:
-            browser_agent = agent_manager._global_agent
-        
-        if not browser_agent:
-            logger.warning(f"No browser agent found for session {session_id}")
+        if not self.agent_manager:
+            logger.error("Agent manager is None - this should not happen after initialization")
             return {
                 "browser_initialized": False,
                 "current_url": "",
@@ -39,30 +39,40 @@ class BaseTaskExecutor:
                 "screenshot": None
             }
         
-        return await BrowserUtils.get_browser_state(browser_agent, session_id=session_id)
-    
-    async def _handle_exception(self, exception, session_id, start_time, browser_agent=None):
-        from app.libs.decorators import log_thought
-        import time
-        import traceback
+        browser_manager = self.agent_manager._browser_managers.get(session_id)
         
-        error_message = f"Error executing task: {str(exception)}"
-        logger.error(error_message)
-        logger.error(traceback.format_exc())
+        if not browser_manager:
+            logger.warning(f"No browser manager found for session {session_id}")
+            return {
+                "browser_initialized": False,
+                "current_url": "",
+                "page_title": "",
+                "screenshot": None
+            }
+        
+        return await BrowserUtils.get_browser_state(browser_manager, session_id=session_id)
+    
+    async def _handle_exception(self, exception, session_id, start_time, browser_manager=None):
+        # Use centralized error handler
+        error_context = "task execution"
+        error_dict = error_handler.log_error(exception, error_context, session_id)
         
         # Try to get browser screenshot 
         screenshot_data = None
-        if browser_agent:
-            result = await BrowserUtils.capture_screenshot(browser_agent, session_id)
-            screenshot_data = result.get("screenshot")
+        if browser_manager:
+            try:
+                result = await BrowserUtils.capture_screenshot(browser_manager, session_id)
+                screenshot_data = result.get("screenshot")
+            except Exception as screenshot_error:
+                logger.warning(f"Failed to capture error screenshot: {screenshot_error}")
         
-        # Log error as answer
+        # Log error as answer with timing information
         log_thought(
             session_id=session_id,
             type_name="answer",
             category="result",
             node="Answer",
-            content=f"Error executing task: {str(exception)}",
+            content=error_handler.format_user_error(error_dict)["message"],
             technical_details={
                 "error": str(exception),
                 "processing_time_sec": round((time.time() - start_time), 2)
@@ -94,7 +104,7 @@ class NavigationExecutor(BaseTaskExecutor):
             paths = setup_paths()
             server_path = paths["server_path"]
             
-            browser_agent = await agent_manager.get_or_create_browser_agent(
+            browser_manager = await self.agent_manager.get_or_create_browser_manager(
                 session_id=session_id,
                 server_path=server_path,
                 headless=BROWSER_HEADLESS,  # Use global configuration
@@ -114,8 +124,8 @@ class NavigationExecutor(BaseTaskExecutor):
             )
             
             # Execute navigation
-            result = await browser_agent.session.call_tool("navigate", {"url": url})
-            response_data = browser_agent.parse_response(result.content[0].text)
+            result = await browser_manager.session.call_tool("navigate", {"url": url})
+            response_data = browser_manager.parse_response(result.content[0].text)
             
             # Process screenshot if available
             screenshot = None
@@ -205,14 +215,14 @@ class ActionExecutor(BaseTaskExecutor):
     
     async def execute(self, classification: Dict[str, Any], session_id: str, model_id: str = None, region: str = None) -> Dict[str, Any]:
         start_time = time.time()
-        browser_agent = None
+        browser_manager = None
         
         try:
             # Setup and initialize
             paths = setup_paths()
             server_path = paths["server_path"]
             
-            browser_agent = await agent_manager.get_or_create_browser_agent(
+            browser_manager = await self.agent_manager.get_or_create_browser_manager(
                 session_id=session_id,
                 server_path=server_path,
                 headless=BROWSER_HEADLESS,  # Use global configuration
@@ -233,8 +243,8 @@ class ActionExecutor(BaseTaskExecutor):
             
             # Execute action with dedicated error handling
             try:
-                result = await browser_agent.session.call_tool("act", {"instruction": user_message})
-                response_data = browser_agent.parse_response(result.content[0].text)
+                result = await browser_manager.session.call_tool("act", {"instruction": user_message})
+                response_data = browser_manager.parse_response(result.content[0].text)
                 
                 # Process successful response
                 screenshot = None
@@ -352,7 +362,7 @@ class AgentOrchestrator(BaseTaskExecutor):
 
     async def execute(self, user_message: str, session_id: str, model_id: str = None, region: str = None) -> Dict[str, Any]:
         start_time = time.time()
-        browser_agent = None
+        browser_manager = None
         
         try:
             # Get current date
@@ -368,7 +378,7 @@ class AgentOrchestrator(BaseTaskExecutor):
             )
 
             # Initialize conversation manager with proper store
-            from app.libs.conversation_manager import ConversationManager
+            from app.libs.data.conversation_manager import ConversationManager
             from app.api_routes.router import task_supervisor
             conversation_manager = ConversationManager(task_supervisor.conversation_store)
             
@@ -387,7 +397,7 @@ class AgentOrchestrator(BaseTaskExecutor):
             # Setup browser agent
             paths = setup_paths()
             server_path = paths["server_path"]
-            browser_agent = await agent_manager.get_or_create_browser_agent(
+            browser_manager = await self.agent_manager.get_or_create_browser_manager(
                 session_id=session_id,
                 server_path=server_path,
                 headless=BROWSER_HEADLESS,
@@ -396,7 +406,7 @@ class AgentOrchestrator(BaseTaskExecutor):
             )
             
             # Create agent executor
-            agent_executor = agent_manager.get_agent_executor(browser_agent)
+            agent_executor = self.agent_manager.get_agent_executor(browser_manager)
             
             # Main conversation loop
             turn_count = 0
@@ -412,7 +422,7 @@ class AgentOrchestrator(BaseTaskExecutor):
                     break
                 
                 # Prepare messages for model
-                from app.libs.conversation_manager import prepare_messages_for_bedrock
+                from app.libs.data.conversation_manager import prepare_messages_for_bedrock
                 filtered_messages = prepare_messages_for_bedrock(conversation_messages)
                 
                 # Call model
@@ -474,7 +484,7 @@ class AgentOrchestrator(BaseTaskExecutor):
                                 
                                 # Execute mission
                                 result = await self._execute_mission(
-                                    browser_agent=browser_agent,
+                                    browser_manager=browser_manager,
                                     agent_executor=agent_executor,
                                     mission=mission,
                                     task_context=task_context,
@@ -523,7 +533,7 @@ class AgentOrchestrator(BaseTaskExecutor):
                 turn_count += 1
             
             # Get final browser state and return results
-            browser_state = await BrowserUtils.get_browser_state(browser_agent)
+            browser_state = await BrowserUtils.get_browser_state(browser_manager)
             
             # Log final answer
             log_thought(
@@ -559,7 +569,7 @@ class AgentOrchestrator(BaseTaskExecutor):
             }
         
         except Exception as e:
-            return await self._handle_exception(e, session_id, start_time, browser_agent)
+            return await self._handle_exception(e, session_id, start_time, browser_manager)
 
     
     async def _generate_final_summary(self, messages, model_id, session_id):
@@ -582,7 +592,7 @@ class AgentOrchestrator(BaseTaskExecutor):
         messages.append(summary_request)
         
         # Send request to Bedrock
-        from app.libs.conversation_manager import prepare_messages_for_bedrock
+        from app.libs.data.conversation_manager import prepare_messages_for_bedrock
         filtered_messages = prepare_messages_for_bedrock(messages)
         
         final_response = self.bedrock_client.converse(
@@ -593,7 +603,7 @@ class AgentOrchestrator(BaseTaskExecutor):
         
         return final_response['output']['message']['content'][0]['text']
 
-    async def _execute_mission(self, browser_agent, agent_executor, mission, task_context, tool_use_id, session_id):
+    async def _execute_mission(self, browser_manager, agent_executor, mission, task_context, tool_use_id, session_id):
         """Execute a specific mission using the agent executor and return results in tool_result format."""
         from app.api_routes.router import task_supervisor
         
@@ -602,7 +612,7 @@ class AgentOrchestrator(BaseTaskExecutor):
         
         try:
             # Get browser state using unified method
-            browser_state = await BrowserUtils.get_browser_state(browser_agent, session_id)
+            browser_state = await BrowserUtils.get_browser_state(browser_manager, session_id)
             current_url = browser_state.get("current_url", "")
             
             if current_url:
@@ -662,7 +672,7 @@ class AgentOrchestrator(BaseTaskExecutor):
             
             # Try to get current browser state even in error case
             try:
-                error_browser_state = await BrowserUtils.get_browser_state(browser_agent, session_id)
+                error_browser_state = await BrowserUtils.get_browser_state(browser_manager, session_id)
                 if error_browser_state:
                     error_data["current_url"] = error_browser_state.get("current_url", "")
                     error_data["page_title"] = error_browser_state.get("page_title", "")
@@ -685,7 +695,7 @@ class AgentOrchestrator(BaseTaskExecutor):
             return {"message": error_message.to_dict()}
 
 
-    async def _handle_exception(self, exception, session_id, start_time, browser_agent=None):
+    async def _handle_exception(self, exception, session_id, start_time, browser_manager=None):
         """Handle exceptions during task orchestration."""
         error_message = f"Error orchestrating task: {str(exception)}"
         logger.error(error_message)

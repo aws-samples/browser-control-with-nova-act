@@ -3,8 +3,8 @@ import time
 from typing import Dict, List, Any, Optional, Union
 from datetime import datetime
 
-from app.libs.conversation_store import ConversationStore
-from app.libs.message import Message
+from app.libs.data.conversation_store import ConversationStore
+from app.libs.data.message import Message
 
 logger = logging.getLogger("conversation_manager")
 

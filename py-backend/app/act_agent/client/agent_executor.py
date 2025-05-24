@@ -1,24 +1,28 @@
 import base64
+import logging
 import time
 from typing import Dict, List, Any
-from app.libs.prompts import NOVA_ACT_AGENT_PROMPT, DEFAULT_MODEL_ID
-from app.libs.decorators import log_thought
-from app.libs.message import Message
-from app.libs.browser_utils import BrowserUtils, BedrockClient
+
+from app.libs.core.browser_utils import BrowserUtils, BedrockClient
+from app.libs.utils.decorators import log_thought
+from app.libs.data.message import Message
+from app.libs.config.prompts import NOVA_ACT_AGENT_PROMPT, DEFAULT_MODEL_ID
+
+logger = logging.getLogger(__name__)
 
 EXCLUDED_TOOLS = ["close_browser", "initialize_browser", "restart_browser", "take_screenshot"]
 
 class AgentExecutor:
-    def __init__(self, browser_agent):
-        self.browser_agent = browser_agent
-        region = (self.browser_agent.server_config or {}).get("region", "us-west-2")
+    def __init__(self, browser_manager):
+        self.browser_manager = browser_manager
+        region = (self.browser_manager.server_config or {}).get("region", "us-west-2")
         self.bedrock_client = BedrockClient(
-            self.browser_agent.server_config.get("model_id", DEFAULT_MODEL_ID), 
+            self.browser_manager.server_config.get("model_id", DEFAULT_MODEL_ID), 
             region
         )
         
     def _make_bedrock_request(self, messages: List[Dict], tools: List[Dict]) -> Dict:
-        model_id = self.browser_agent.server_config.get("model_id", DEFAULT_MODEL_ID)
+        model_id = self.browser_manager.server_config.get("model_id", DEFAULT_MODEL_ID)
         return self.bedrock_client.converse(
             messages=messages, 
             system_prompt=NOVA_ACT_AGENT_PROMPT,
@@ -28,10 +32,10 @@ class AgentExecutor:
     async def execute(self, request: str, session_id: str = None, max_turns: int = 10, 
                     current_url: str = None, supervisor_screenshot: dict = None, **kwargs):
         """Execute method with screenshot handling"""
-        if not self.browser_agent.session:
+        if not self.browser_manager.session:
             raise ValueError("Not connected to MCP server")
                 
-        if not self.browser_agent.browser_initialized:
+        if not self.browser_manager.browser_initialized:
             raise ValueError("Browser is not initialized")
         
         start_time = time.time()
@@ -45,22 +49,7 @@ class AgentExecutor:
                     node="Agent",
                     content=f"Received request from Supervisor: '{request}'"
                 )
-                
-            # Sync browser URL if needed
-            # if current_url and current_url.startswith("http"):
-            #     try:
-            #         status_result = await self.browser_agent.session.call_tool("get_browser_info", {})
-            #         browser_info = self.browser_agent.parse_response(status_result.content[0].text)
-            #         browser_url = browser_info.get("current_url", "")
-                    
-            #         if browser_url != current_url:
-            #             print(f"Synchronizing browser state to URL: {current_url}")
-            #             await self.browser_agent.session.call_tool("navigate", {"url": current_url})
-            #             await asyncio.sleep(0.5)  # Brief delay after navigation
-            #     except Exception as e:
-            #         print(f"URL sync failed: {e}")
-            
-            # Prepare message content
+               
             message_content = [{"text": request}]
             
             # Add screenshot to message if available
@@ -76,14 +65,14 @@ class AgentExecutor:
                         }
                     })
                 except Exception as e:
-                    print(f"Error processing supervisor screenshot: {e}")
+                    logger.error("Error processing supervisor screenshot", extra={"error": str(e)})
             else:
-                print(f"No supervisor screenshot available, continuing without it")
+                logger.debug("No supervisor screenshot available, continuing without it")
             
             # Create message and prepare tools
             messages = [{"role": "user", "content": message_content}]
             
-            response = await self.browser_agent.session.list_tools()
+            response = await self.browser_manager.session.list_tools()
             available_tools = [{
                 "name": tool.name,
                 "description": tool.description,
@@ -97,7 +86,7 @@ class AgentExecutor:
             result = await self._process_response(response, messages, bedrock_tools, session_id, max_turns)
             
             # Get final state for complete result
-            final_state = await BrowserUtils.get_browser_state(self.browser_agent, session_id)
+            final_state = await BrowserUtils.get_browser_state(self.browser_manager, session_id)
             
             return {
                 "answer": result.get("answer", ""),
@@ -108,7 +97,7 @@ class AgentExecutor:
             
         except Exception as e:
             # Try to get state even on error
-            error_state = await BrowserUtils.get_browser_state(self.browser_agent, session_id=None)
+            error_state = await BrowserUtils.get_browser_state(self.browser_manager, session_id=None)
             
             if session_id:
                 log_thought(
@@ -131,9 +120,7 @@ class AgentExecutor:
                     }
                 )
 
-            print(f"Error executing chat task: {e}")
-            import traceback
-            traceback.print_exc()
+            logger.error("Error executing chat task", extra={"error": str(e)}, exc_info=True)
             
             return {
                 "error": str(e),
@@ -144,15 +131,15 @@ class AgentExecutor:
     
     async def _sync_browser_url(self, target_url):
         try:
-            status_result = await self.browser_agent.session.call_tool("get_browser_info", {})
-            browser_info = self.browser_agent.parse_response(status_result.content[0].text)
+            status_result = await self.browser_manager.session.call_tool("get_browser_info", {})
+            browser_info = self.browser_manager.parse_response(status_result.content[0].text)
             browser_url = browser_info.get("current_url", "")
             
             if browser_url != target_url:
-                print(f"\nSynchronizing browser state to URL: {target_url}")
-                await self.browser_agent.session.call_tool("navigate", {"url": target_url})
+                logger.info("Synchronizing browser state to URL", extra={"target_url": target_url, "current_url": browser_url})
+                await self.browser_manager.session.call_tool("navigate", {"url": target_url})
         except Exception as e:
-            print(f"\nError synchronizing browser URL: {e}")
+            logger.error("Error synchronizing browser URL", extra={"error": str(e), "target_url": target_url})
             
     async def _handle_tool_call(self, tool_info: Dict, messages: List[Dict], session_id: str = None) -> List[str]:
         tool_name = tool_info['name']
@@ -173,8 +160,8 @@ class AgentExecutor:
             )
         
         try:
-            result = await self.browser_agent.session.call_tool(tool_name, tool_args)
-            response_data = self.browser_agent.parse_response(result.content[0].text)
+            result = await self.browser_manager.session.call_tool(tool_name, tool_args)
+            response_data = self.browser_manager.parse_response(result.content[0].text)
             success = True
         except Exception as e:
             success = False
@@ -187,7 +174,7 @@ class AgentExecutor:
                 "status": "error"
             }
             
-            error_state = await BrowserUtils.capture_screenshot(self.browser_agent, session_id, include_log=False)
+            error_state = await BrowserUtils.capture_screenshot(self.browser_manager, session_id, include_log=False)
             screenshot_data = error_state.get("screenshot")
         
         status = response_data.get("status", "unknown")
@@ -265,9 +252,9 @@ class AgentExecutor:
         """Attempt to capture a screenshot when an error occurs"""
         screenshot_data = None
         try:
-            if self.browser_agent.browser_initialized and self.browser_agent.session:
-                status_result = await self.browser_agent.session.call_tool("get_browser_info", {"include_screenshot": True})
-                browser_info = self.browser_agent.parse_response(status_result.content[0].text)
+            if self.browser_manager.browser_initialized and self.browser_manager.session:
+                status_result = await self.browser_manager.session.call_tool("get_browser_info", {"include_screenshot": True})
+                browser_info = self.browser_manager.parse_response(status_result.content[0].text)
                 
                 if isinstance(browser_info, dict):
                     screenshot_data = browser_info.get("screenshot")
@@ -287,7 +274,7 @@ class AgentExecutor:
                             }
                         )
         except Exception as sc_error:
-            print(f"Failed to capture error screenshot: {sc_error}")
+            logger.error("Failed to capture error screenshot", extra={"error": str(sc_error)})
         
         return screenshot_data
 
@@ -327,7 +314,7 @@ class AgentExecutor:
                     }
                 })
             except Exception as e:
-                print(f"Error decoding screenshot: {e}")
+                logger.error("Error decoding screenshot", extra={"error": str(e)})
         
         return Message(
             role="user",

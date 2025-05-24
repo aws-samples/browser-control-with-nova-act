@@ -8,7 +8,7 @@ import importlib
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-@router.get("/api/config/browser")
+@router.get("/config/browser")
 async def get_browser_config():
     """Get the current browser configuration"""
     try:
@@ -23,11 +23,11 @@ async def get_browser_config():
         logger.error(f"Error getting browser config: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error getting browser config: {str(e)}")
 
-@router.post("/api/config/browser/headless")
+@router.post("/config/browser/headless")
 async def set_browser_headless(headless: bool = Body(..., embed=True), session_id: str = Body(None, embed=True)):
     """Set the browser headless mode and restart browser with the same URL"""
     try:
-        from app.libs.agent_manager import agent_manager
+        from app.libs.agent_manager_instance import get_agent_manager
         from app.libs.task_executors import BaseTaskExecutor
         import app.libs.config
         
@@ -45,7 +45,7 @@ async def set_browser_headless(headless: bool = Body(..., embed=True), session_i
                 logger.info(f"Captured current URL before restart: {current_url}")
             
         # Close all browser instances
-        await agent_manager.close_all()
+        await get_agent_manager().close_all_managers()
         logger.info("All browser instances have been closed")
         
         # Update the headless mode setting
@@ -64,11 +64,11 @@ async def set_browser_headless(headless: bool = Body(..., embed=True), session_i
         logger.error(f"Error setting browser headless mode: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error setting browser headless mode: {str(e)}")
 
-@router.post("/api/browser/restore_session")
+@router.post("/browser/restore_session")
 async def restore_browser_session(session_id: str = Body(..., embed=True), url: str = Body(..., embed=True)):
     """Restore a browser session by navigating to the specified URL"""
     try:
-        from app.libs.agent_manager import agent_manager
+        from app.libs.agent_manager_instance import get_agent_manager
         from app.libs.utils import setup_paths
         from app.libs.config import BROWSER_HEADLESS
         
@@ -77,15 +77,15 @@ async def restore_browser_session(session_id: str = Body(..., embed=True), url: 
         server_path = paths["server_path"]
         
         # Get or create browser agent
-        browser_agent = await agent_manager.get_or_create_browser_agent(
+        browser_manager = await get_agent_manager().get_or_create_browser_manager(
             session_id=session_id,
             server_path=server_path,
             headless=BROWSER_HEADLESS
         )
         
         # Navigate to URL
-        result = await browser_agent.session.call_tool("navigate", {"url": url})
-        response_data = browser_agent.parse_response(result.content[0].text)
+        result = await browser_manager.session.call_tool("navigate", {"url": url})
+        response_data = browser_manager.parse_response(result.content[0].text)
         
         return {
             "success": True,
@@ -96,7 +96,7 @@ async def restore_browser_session(session_id: str = Body(..., embed=True), url: 
         logger.error(f"Error restoring browser session: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error restoring browser session: {str(e)}")
 
-@router.post("/api/config/browser/max_steps")
+@router.post("/config/browser/max_steps")
 async def set_browser_max_steps(max_steps: int = Body(..., embed=True)):
     """Set the maximum browser steps"""
     try:
@@ -115,7 +115,7 @@ async def set_browser_max_steps(max_steps: int = Body(..., embed=True)):
         logger.error(f"Error setting browser max_steps: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error setting browser max_steps: {str(e)}")
 
-@router.post("/api/config/conversation/storage_type")
+@router.post("/config/conversation/storage_type")
 async def set_conversation_storage_type(storage_type: str = Body(..., embed=True)):
     """Change the conversation storage type (memory or file)"""
     try:
@@ -145,7 +145,7 @@ async def set_conversation_storage_type(storage_type: str = Body(..., embed=True
         logger.error(f"Error setting conversation storage type: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error setting conversation storage type: {str(e)}")
 
-@router.post("/api/config/conversation/max_turns")
+@router.post("/config/conversation/max_turns")
 async def set_max_turns(agent_turns: Optional[int] = None, supervisor_turns: Optional[int] = None):
     """Set the maximum turns for conversation"""
     try:
@@ -173,3 +173,91 @@ async def set_max_turns(agent_turns: Optional[int] = None, supervisor_turns: Opt
     except Exception as e:
         logger.error(f"Error setting max turns: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error setting max turns: {str(e)}")
+    
+@router.post("/browser/restart")
+async def restart_browser(
+    session_id: str = Body(..., embed=True),
+    url: Optional[str] = Body(None, embed=True),
+    preserve_url: bool = Body(True, embed=True),
+    headless: Optional[bool] = Body(None, embed=True)
+):
+    """
+    Restart the browser while optionally preserving the current URL.
+    
+    Parameters:
+    - session_id: Session identifier
+    - url: Optional URL to navigate to after restart
+    - preserve_url: Whether to preserve current URL if no URL provided
+    - headless: Optional headless mode override
+    """
+    try:
+        from app.libs.agent_manager_instance import get_agent_manager
+        from app.libs.utils import setup_paths
+        from app.services.session_service import session_service
+        from app.libs.decorators import log_thought
+        
+        # Setup paths
+        paths = setup_paths()
+        if not paths or "server_path" not in paths:
+            raise HTTPException(status_code=500, detail="Server path not found")
+        
+        # Log restart operation
+        if session_id:
+            log_thought(
+                session_id=session_id,
+                type_name="processing",
+                category="status",
+                node="Browser",
+                content=f"Restarting browser" + 
+                        (f" with URL: {url}" if url else " with current URL" if preserve_url else "")
+            )
+        
+        # Close existing agent and create new one (simulating restart)
+        await get_agent_manager().close_manager(session_id)
+        
+        # Determine URL for new agent
+        restart_url = url if url else (current_url if preserve_url and current_url else "https://www.google.com")
+        
+        # Create new agent
+        browser_manager = await get_agent_manager().get_or_create_browser_manager(
+            session_id=session_id,
+            server_path=server_path,
+            headless=headless,
+            url=restart_url
+        )
+        
+        result = {
+            "success": True,
+            "headless": headless,
+            "current_url": restart_url,
+            "browser_initialized": True
+        }
+        
+        # Update session service browser initialization status
+        if session_service:
+            session_service.set_browser_initialized(
+                session_id, 
+                value=result.get("status") not in ["error", "failure"]
+            )
+        
+        # Log the result
+        if session_id:
+            status = "success" if result.get("status") not in ["error", "failure"] else "error"
+            log_thought(
+                session_id=session_id,
+                type_name="processing" if status == "success" else "error",
+                category="status",
+                node="Browser",
+                content=f"Browser restart {status}: {result.get('message', '')}"
+            )
+        
+        return {
+            "status": "success" if result.get("status") not in ["error", "failure"] else "error",
+            "message": result.get("message", "Browser restarted successfully"),
+            "current_url": result.get("current_url", ""),
+            "page_title": result.get("page_title", ""),
+            "browser_initialized": result.get("status") not in ["error", "failure"]
+        }
+    except Exception as e:
+        logger.error(f"Error restarting browser: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error restarting browser: {str(e)}")

@@ -1,5 +1,5 @@
 # Import centralized configuration settings
-from app.libs.config import DEFAULT_MODEL_ID, MAX_SUPERVISOR_TURNS, MAX_AGENT_TURNS
+from app.libs.config.config import DEFAULT_MODEL_ID, MAX_SUPERVISOR_TURNS, MAX_AGENT_TURNS
 
 NOVA_ACT_AGENT_PROMPT="""
 You are a browser automation assistant that executes tasks by analyzing screenshots and performing precise actions.

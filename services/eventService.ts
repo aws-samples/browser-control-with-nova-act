@@ -3,7 +3,8 @@ export type EventType =
   | 'visualization-ready' 
   | 'thought-completion' 
   | 'thought-stream-complete'
-  | 'task-status-update';
+  | 'task-status-update'
+  | 'user-message-added';
   
 // Define event detail types
 export interface VisualizationEventDetail {
@@ -29,6 +30,16 @@ export interface TaskStatusEventDetail {
   final_answer?: boolean;
 }
 
+export interface UserMessageEventDetail {
+  type: 'question';
+  content: string;
+  node: 'User';
+  category: 'user_input';
+  timestamp: string;
+  sessionId: string;
+  fileUpload?: any;
+}
+
 // Type-safe event dispatch
 export const dispatchEvent = {
   visualizationReady: (detail: VisualizationEventDetail) => {
@@ -51,6 +62,12 @@ export const dispatchEvent = {
   
   taskStatusUpdate: (detail: TaskStatusEventDetail) => {
     const event = new CustomEvent('task-status-update', { detail });
+    window.dispatchEvent(event);
+    return event;
+  },
+  
+  userMessageAdded: (detail: UserMessageEventDetail) => {
+    const event = new CustomEvent('user-message-added', { detail });
     window.dispatchEvent(event);
     return event;
   }
@@ -80,5 +97,11 @@ export const subscribeToEvent = {
     const eventHandler = ((e: CustomEvent) => handler(e.detail)) as EventListener;
     window.addEventListener('task-status-update', eventHandler);
     return () => window.removeEventListener('task-status-update', eventHandler);
+  },
+  
+  userMessageAdded: (handler: (detail: UserMessageEventDetail) => void) => {
+    const eventHandler = ((e: CustomEvent) => handler(e.detail)) as EventListener;
+    window.addEventListener('user-message-added', eventHandler);
+    return () => window.removeEventListener('user-message-added', eventHandler);
   }
 };

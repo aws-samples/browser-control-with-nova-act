@@ -1,10 +1,12 @@
 from fastapi import FastAPI, Request, BackgroundTasks, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from app.api_routes import thought_stream, router, mcp_servers
-from app.libs.agent_manager import agent_manager
-from app.libs.utils import PathManager, setup_paths, register_session_and_thought_handler
-from app.libs.thought_stream import thought_handler
-from app.libs.config import BROWSER_HEADLESS, BROWSER_USER_DATA_DIR
+from app.libs.utils.utils import PathManager, setup_paths, register_session_and_thought_handler
+from app.libs.utils.thought_stream import thought_handler
+from app.libs.config.config import BROWSER_HEADLESS, BROWSER_USER_DATA_DIR
+from app.libs.utils.shutdown_manager import shutdown_manager
+from app.libs.core.agent_manager import get_agent_manager
+from app.libs.data.session_manager import configure_session_manager
 
 import logging
 import sys
@@ -32,6 +34,7 @@ logging.getLogger('thought_stream').setLevel(logging.WARNING)
 
 app = FastAPI(title="Nova Act Agent API")
 
+# Dictionary for tracking MCP processes - needs to be global
 mcp_processes = {}
 
 app.include_router(thought_stream.router, prefix="/api/assistant", tags=["Thought Stream"])
@@ -54,16 +57,14 @@ async def health_check():
 async def shutdown_event():
     logger.info("Application shutting down - cleaning up resources...")
     try:
-        await asyncio.wait_for(safe_shutdown(), timeout=5.0)
-    except asyncio.TimeoutError:
-        logger.warning("Shutdown timed out, forcing resource cleanup")
-        force_cleanup()
-    
-    logger.info("Shutdown complete")
+        await shutdown_manager.graceful_shutdown()
+    except Exception as e:
+        logger.error(f"Error during graceful shutdown: {e}")
+        shutdown_manager.force_cleanup()
 
 async def safe_shutdown():
     try:
-        await asyncio.wait_for(agent_manager.close_all(), timeout=3.0)
+        await asyncio.wait_for(get_agent_manager().close_all_managers(), timeout=3.0)
     except asyncio.TimeoutError:
         logger.warning("Agent manager close timed out")
     
@@ -82,19 +83,28 @@ async def safe_shutdown():
         except Exception as e:
             logger.error(f"Error terminating process {process_id}: {str(e)}")
 
-def force_cleanup():
-    for process_id, process in list(mcp_processes.items()):
-        try:
-            if process and process.poll() is None:
-                process.kill()
-        except:
-            pass
-
 @app.on_event("startup")
 async def startup_event():
     global_session_id = "global-startup"
     try:
         logger.info("Initializing Nova Act Agent on server startup...")
+        
+        # Configure session manager
+        session_manager = configure_session_manager(
+            store_type="file",  # Use file store for persistence
+            ttl=7200,  # 2 hours default TTL
+            storage_dir="./data/sessions"
+        )
+        logger.info("Session manager configured")
+        
+        # Initialize the shutdown manager with references
+        shutdown_manager.register_mcp_processes(mcp_processes)
+        shutdown_manager.register_agent_manager(get_agent_manager())
+        shutdown_manager.register_session_manager(session_manager)
+        
+        # Setup signal handlers and exit handler
+        shutdown_manager.setup_signal_handlers()
+        shutdown_manager.register_exit_handler()
         
         paths = setup_paths()
         try:
@@ -111,7 +121,7 @@ async def startup_event():
             server_path = paths["server_path"]
             logger.info(f"Starting Nova Act Server from {server_path}")
             
-            global mcp_processes
+            # mcp_processes is already defined globally so no need to declare again
             server_process = subprocess.Popen(
                 [sys.executable, server_path],
                 stdin=subprocess.PIPE,
@@ -131,15 +141,7 @@ async def startup_event():
             logger.error(traceback.format_exc())
             raise RuntimeError(error_msg)
         
-        # Default values for model_id and region for the global agent
-        nova_act_instance = await agent_manager.initialize_global_agent(
-            server_path=paths["server_path"], 
-            headless=BROWSER_HEADLESS,
-            model_id=None,  
-            region="us-west-2" 
-        )
-        
-        logger.info("Nova Act Agent initialized and ready")
+        logger.info("Nova Act Server started and ready for session-based agents")
         
     except Exception as e:
         error_msg = f"Error initializing Nova Act Agent: {str(e)}"
