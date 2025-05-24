@@ -2,6 +2,7 @@
 import React, { useState } from "react";
 import Chat from '@/components/Chat';
 import ThoughtProcess from '@/components/ThoughtProcess';
+import BrowserControl from '@/components/BrowserControl';
 import { useChat } from "@/hooks/useChat";
 import { models, regions } from '@/constants';
 import TopNavBar from "@/components/TopNavBar";
@@ -67,6 +68,14 @@ export default function AIChat() {
         />
         </div>
       </div>
+      
+      <BrowserControl
+        sessionId={sessionId}
+        isThinking={isThinking}
+        onTerminateSession={actions.terminateSession}
+        onStopAgent={actions.stopAgent}
+        onTakeControl={actions.takeControl}
+      />
     </div>
   );
 }

@@ -10,7 +10,7 @@ MAX_AGENT_TURNS = 6       # Maximum turns between agent and MCP tools
 BROWSER_MAX_STEPS = int(os.environ.get("NOVA_BROWSER_MAX_STEPS", "3"))  # Maximum turns between Nova Act and Browser
 
 # Browser settings - Core
-BROWSER_HEADLESS = True  # Set to False for visible browser windows
+BROWSER_HEADLESS = False  # Set to False for visible browser windows
 BROWSER_START_URL = "https://www.google.com"  # Default starting URL
 BROWSER_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 
@@ -48,7 +48,3 @@ MCP_TRANSPORT = os.environ.get("NOVA_MCP_TRANSPORT", "stdio")
 MCP_PORT = int(os.environ.get("NOVA_MCP_PORT", "8000"))
 MCP_HOST = os.environ.get("NOVA_MCP_HOST", "localhost")
 MCP_LOG_LEVEL = os.environ.get("NOVA_MCP_LOG_LEVEL", "WARNING")
-
-# Allow environment variable override of key settings
-if os.environ.get("NOVA_BROWSER_HEADLESS", "").lower() in ["true", "false"]:
-    BROWSER_HEADLESS = os.environ.get("NOVA_BROWSER_HEADLESS", "false").lower() == "true"

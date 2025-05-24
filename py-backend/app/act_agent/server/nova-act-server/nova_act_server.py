@@ -416,7 +416,7 @@ async def take_screenshot(max_width: int = 800, quality: int = 70) -> Dict[str, 
 
 def cleanup_resources_sync():
     """
-    간소화된 종료 처리 - 참조 제거를 통해 리소스 누수 방지
+    Simplified shutdown process - prevent resource leaks through reference cleanup
     """
     global _browser_controller, _is_shutting_down
     _is_shutting_down = True
@@ -425,31 +425,31 @@ def cleanup_resources_sync():
         try:
             logger.info("Closing browser resources...")
             
-            # 전역 참조 해제
+            # Clear global reference
             controller_ref = _browser_controller
             _browser_controller = None
             
-            # 심플하게 close 메서드만 호출
+            # Simply call close method
             if hasattr(controller_ref, 'close'):
                 try:
                     controller_ref.close()
                 except Exception as e:
-                    # 오류가 발생해도 무시하고 계속 진행
+                    # Ignore errors and continue
                     pass
             
-            # 직접 참조 해제
+            # Clear direct reference
             controller_ref = None
             
-            # 명시적으로 가비지 컬렉션 실행
+            # Force garbage collection
             import gc
             gc.collect()
             
             logger.info("Resource cleanup completed")
         except Exception as e:
-            # 오류 발생 시 로깅만 하고 진행
+            # Log errors but continue shutdown process
             logger.error(f"Error during cleanup: {str(e)}")
     
-    # 종료 프로세스 계속 진행
+    # Continue shutdown process
 
 # Use ThreadPoolExecutor for timeout-safe shutdown
 async def shutdown_server(timeout=5.0):

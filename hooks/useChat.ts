@@ -6,6 +6,7 @@ import type { Message, FileUpload, AnalyzeAPIResponse, APIResponse } from '@/typ
 import { subscribeToEvent, dispatchEvent } from '@/services/eventService';
 import { createLogger } from '@/utils/logger';
 import { ErrorHandler } from '@/utils/errorHandler';
+import { resetThinkingTimer, calculateProcessingTime as calcProcessingTime } from '@/utils/timerUtils';
 import {
   prepareApiMessages,
   createUserMessage,
@@ -35,6 +36,9 @@ interface ChatActions {
   handleInputChange: (event: React.ChangeEvent<HTMLTextAreaElement>) => void;
   handleReset: () => void;
   setCurrentUpload: (upload: FileUpload | null) => void;
+  terminateSession: () => Promise<void>;
+  stopAgent: () => void;
+  takeControl: () => void;
 }
 
 export interface UseChatReturn extends ChatState {
@@ -80,25 +84,74 @@ export const useChat = (selectedModel: string, selectedRegion: string): UseChatR
   const thinkingStartTime = useRef<number | null>(null);
 
   useEffect(() => {
-    if (isThinking) {
-      thinkingStartTime.current = Date.now();
-    } else if (thinkingStartTime.current) {
+    if (!isThinking && thinkingStartTime.current) {
       thinkingStartTime.current = null;
     }
   }, [isThinking]);
   
-  const calculateProcessingTime = () => {
-    if (thinkingStartTime.current) {
-      const processingTimeMs = Date.now() - thinkingStartTime.current;
-      return (processingTimeMs / 1000).toFixed(2);
+
+  const terminateSession = useCallback(async () => {
+    if (!sessionId) {
+      throw new Error('No active session to terminate');
     }
-    return null;
-  };
+
+    try {
+      const response = await apiRequest(`/router/session/${sessionId}`, {
+        method: 'DELETE'
+      });
+      
+      const data = await response.json();
+
+      if (data.status === 'success') {
+        // Clear session-related state
+        setSessionId(undefined);
+        setIsThinking(false);
+        setMessages([]);
+        setQueryDetails([]);
+        thinkingStartTime.current = null;
+        
+        logger.info('Session terminated successfully');
+      } else {
+        throw new Error(data.message || 'Failed to terminate session');
+      }
+    } catch (error) {
+      logger.error('Error terminating session:', error);
+      throw error;
+    }
+  }, [sessionId]);
+
+  const stopAgent = useCallback(() => {
+    if (isThinking) {
+      setIsThinking(false);
+      thinkingStartTime.current = null;
+      
+      // Dispatch event to stop any ongoing tasks
+      dispatchEvent.taskStatusUpdate({
+        status: 'stopped',
+        sessionId: sessionId || ''
+      });
+      
+      logger.info('Agent task stopped');
+    }
+  }, [isThinking, sessionId]);
+
+  const takeControl = useCallback(() => {
+    // This could be extended to implement actual browser control transfer
+    // For now, it's a placeholder that stops the agent
+    stopAgent();
+    
+    toast({
+      title: "Control taken",
+      description: "You can now interact with the browser manually. The agent has been paused.",
+    });
+    
+    logger.info('Browser control taken by user');
+  }, [stopAgent]);
 
   useEffect(() => {
     const unsubscribeVisualization = subscribeToEvent.visualizationReady(({ chartData, chartTitle }) => {
       if (chartData) {
-        const processingTime = calculateProcessingTime();
+        const processingTime = calcProcessingTime(thinkingStartTime);
         const timestamp = new Date().toISOString();
         const message = createVisualizationMessage(
           "Here's the visualization based on the data:", 
@@ -120,7 +173,7 @@ export const useChat = (selectedModel: string, selectedRegion: string): UseChatR
         message.timestamp = timestamp;
         
         setMessages(prev => [...prev, message]);
-        setIsThinking(false);
+        resetThinkingTimer(setIsThinking, thinkingStartTime);
       }
     });
     
@@ -139,7 +192,7 @@ export const useChat = (selectedModel: string, selectedRegion: string): UseChatR
             ...technical_details
           };
         } else {
-          const processingTime = calculateProcessingTime();
+          const processingTime = calcProcessingTime(thinkingStartTime);
           if (processingTime) {
             message.technical_details = {
               ...(message.technical_details || {}),
@@ -151,14 +204,14 @@ export const useChat = (selectedModel: string, selectedRegion: string): UseChatR
         
         message.timestamp = timestamp;
         setMessages(prev => [...prev, message]);
-        setIsThinking(false);
+        resetThinkingTimer(setIsThinking, thinkingStartTime);
       }
     });
   
     const unsubscribeThoughtStreamComplete = subscribeToEvent.thoughtStreamComplete(({ sessionId: eventSessionId, finalAnswer }) => {
       if (eventSessionId === sessionId) {
         if (finalAnswer) {
-          const processingTime = calculateProcessingTime();
+          const processingTime = calcProcessingTime(thinkingStartTime);
           const timestamp = new Date().toISOString();
           const message = createAssistantTextMessage(finalAnswer);
           
@@ -175,26 +228,49 @@ export const useChat = (selectedModel: string, selectedRegion: string): UseChatR
           setMessages(prev => [...prev, message]);
         }
         
-        setIsThinking(false);
+        resetThinkingTimer(setIsThinking, thinkingStartTime);
       }
     });
     
     const unsubscribeTaskStatus = subscribeToEvent.taskStatusUpdate(({ status, sessionId: eventSessionId }) => {
       if (eventSessionId === sessionId) {
         if (status === 'start') {
+          // Timer is already started in handleSubmit
           setIsThinking(true);
-          thinkingStartTime.current = Date.now();
         } else if (status === 'complete') {
-          setIsThinking(false);
+          resetThinkingTimer(setIsThinking, thinkingStartTime);
         }
       }
     });
+
+    // Session cleanup on page unload
+    const handleBeforeUnload = async () => {
+      if (sessionId) {
+        try {
+          // Use sendBeacon for reliable cleanup on page unload
+          const url = `/api/router/session/${sessionId}/terminate`;
+          navigator.sendBeacon(url, '');
+        } catch (error) {
+          console.error('Failed to terminate session on unload:', error);
+        }
+      }
+    };
+
+    if (sessionId) {
+      window.addEventListener('beforeunload', handleBeforeUnload);
+      window.addEventListener('pagehide', handleBeforeUnload);
+    }
     
     return () => {
       unsubscribeVisualization();
       unsubscribeThoughtCompletion();
       unsubscribeThoughtStreamComplete();
       unsubscribeTaskStatus();
+      
+      if (sessionId) {
+        window.removeEventListener('beforeunload', handleBeforeUnload);
+        window.removeEventListener('pagehide', handleBeforeUnload);
+      }
     };
   }, [sessionId]);  
 
@@ -211,7 +287,7 @@ export const useChat = (selectedModel: string, selectedRegion: string): UseChatR
       }
       
       if (directAnswer && directAnswer !== "processing") {
-        const processingTime = calculateProcessingTime();
+        const processingTime = calcProcessingTime(thinkingStartTime);
         const timestamp = new Date().toISOString();
         const message = createAssistantTextMessage(directAnswer);
         
@@ -226,7 +302,7 @@ export const useChat = (selectedModel: string, selectedRegion: string): UseChatR
         message.timestamp = timestamp;
         
         setMessages(prev => [...prev, message]);
-        setIsThinking(false);
+        resetThinkingTimer(setIsThinking, thinkingStartTime);
       } else {
         logger.info('Received processing response, waiting for SSE stream', { sessionId: responseSessionId });
       }
@@ -246,7 +322,7 @@ export const useChat = (selectedModel: string, selectedRegion: string): UseChatR
       }
       
       if (directAnswer && directAnswer !== "processing") {
-        const processingTime = calculateProcessingTime();
+        const processingTime = calcProcessingTime(thinkingStartTime);
         const timestamp = new Date().toISOString();
         const message = createAssistantTextMessage(directAnswer);
         
@@ -261,7 +337,7 @@ export const useChat = (selectedModel: string, selectedRegion: string): UseChatR
         message.timestamp = timestamp;
         
         setMessages(prev => [...prev, message]);
-        setIsThinking(false);
+        resetThinkingTimer(setIsThinking, thinkingStartTime);
       } else {
         logger.info('Received processing response, waiting for SSE stream', { sessionId: responseSessionId });
       }
@@ -281,7 +357,7 @@ export const useChat = (selectedModel: string, selectedRegion: string): UseChatR
       }
       
       if (directAnswer && directAnswer !== "processing") {
-        const processingTime = calculateProcessingTime();
+        const processingTime = calcProcessingTime(thinkingStartTime);
         const timestamp = new Date().toISOString();
         const message = createAssistantTextMessage(directAnswer);
         
@@ -296,7 +372,7 @@ export const useChat = (selectedModel: string, selectedRegion: string): UseChatR
         message.timestamp = timestamp;
         
         setMessages(prev => [...prev, message]);
-        setIsThinking(false);
+        resetThinkingTimer(setIsThinking, thinkingStartTime);
       } else {
         logger.info('Received processing response, waiting for SSE stream', { sessionId: responseSessionId });
       }
@@ -340,6 +416,8 @@ export const useChat = (selectedModel: string, selectedRegion: string): UseChatR
     
     setInput("");
     setIsLoading(true);
+    setIsThinking(true);
+    thinkingStartTime.current = Date.now();
   
     try {
       const apiMessages = prepareApiMessages(messages, userMessage);
@@ -404,13 +482,16 @@ export const useChat = (selectedModel: string, selectedRegion: string): UseChatR
       }
       
       setMessages(prev => [...prev, errorMessage]);
-      setIsThinking(false);
+      resetThinkingTimer(setIsThinking, thinkingStartTime);
     } finally {
       setIsLoading(false);
       setCurrentUpload(null);
       if (fileInputRef.current) {
         fileInputRef.current.value = ''; 
       }
+      
+      // Ensure timer is reset in case of any error
+      thinkingStartTime.current = null;
   
       setTimeout(() => {
         isSubmitting.current = false;
@@ -537,6 +618,7 @@ export const useChat = (selectedModel: string, selectedRegion: string): UseChatR
     setCurrentUpload(null);
     setIsThinking(false);
     setSessionId(undefined);
+    thinkingStartTime.current = null;
         
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
@@ -565,6 +647,9 @@ export const useChat = (selectedModel: string, selectedRegion: string): UseChatR
       handleInputChange,
       handleReset,
       setCurrentUpload,
+      terminateSession,
+      stopAgent,
+      takeControl,
     },
     
     fileInputRef,

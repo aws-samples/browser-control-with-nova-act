@@ -273,15 +273,7 @@ class ActionExecutor(BaseTaskExecutor):
                     }
                 )
                 
-                # Log command completion
-                log_thought(
-                    session_id=session_id,
-                    type_name="command_complete", 
-                    category="completion",
-                    node="complete",
-                    content="Browser action completed",
-                    command_id=f"cmd-act-{int(time.time())}"
-                )
+                # Action completed - no additional log needed as answer was already sent
                 
                 return {
                     "type": "act",
@@ -541,15 +533,7 @@ class AgentOrchestrator(BaseTaskExecutor):
                 }
             )
             
-            # Log completion
-            log_thought(
-                session_id=session_id,
-                type_name="command_complete", 
-                category="completion",
-                node="complete",
-                content=f"Task execution completed",
-                command_id=f"cmd-agent-{int(time.time())}"
-            )
+            # Task execution completed - no additional log needed as answer was already sent
                         
             return {
                 "type": "agent",

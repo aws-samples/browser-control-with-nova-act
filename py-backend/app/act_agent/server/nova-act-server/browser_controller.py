@@ -202,31 +202,31 @@ class BrowserController:
             return "Error getting content"
     
     def close(self) -> bool:
-        """종료 처리를 최소화하고 참조만 제거하여 리소스 누수 방지"""
+        """Close browser and clean up all resources"""
         if not hasattr(self, 'nova') or self.nova is None:
-            # 이미 종료되었거나 초기화되지 않음
             return True
         
         try:
-            # 참조 제거 전 로깅
-            logger.info("Closing browser and clearing references")
+            logger.info("Closing browser instance")
             
-            # Nova 인스턴스에 대한 참조 제거
-            if hasattr(self.nova, '_playwright'):
-                # 참조 순환을 방지하기 위해 내부 참조도 명시적으로 제거
-                self.nova._playwright = None
-                
-            if hasattr(self.nova, '_dispatcher'):
-                self.nova._dispatcher = None
-                
-            # Nova 인스턴스 자체 참조 제거
+            # Use NovaAct's stop() method to properly close browser
+            if hasattr(self.nova, 'stop'):
+                try:
+                    self.nova.stop()
+                    logger.info("Browser stopped via nova.stop()")
+                except Exception as e:
+                    logger.warning(f"Error calling nova.stop(): {e}")
+            
+            # Clear the nova instance reference
             self.nova = None
             
-            # 명시적으로 가비지 컬렉션 실행
+            # Force garbage collection
             import gc
             gc.collect()
             
+            logger.info("Browser resources cleaned up successfully")
             return True
+            
         except Exception as e:
-            logger.error(f"Error clearing references: {e}")
+            logger.error(f"Error closing browser: {e}")
             return False
