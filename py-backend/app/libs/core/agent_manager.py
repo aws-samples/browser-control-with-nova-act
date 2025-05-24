@@ -88,9 +88,9 @@ class AgentManager:
         from app.libs.utils.decorators import log_thought
         log_thought(
             session_id=session_id,
-            type_name="browser_status",
+            type_name="others",
             category="initialization",
-            node="Browser",
+            node="Others",
             content="Initializing browser session, this may take a few moments...",
             technical_details={
                 "status": "initializing",
@@ -104,9 +104,9 @@ class AgentManager:
         # Send browser initialization complete callback
         log_thought(
             session_id=session_id,
-            type_name="browser_status", 
+            type_name="others", 
             category="initialization",
-            node="Browser",
+            node="Others",
             content="Browser initialization completed successfully",
             technical_details={
                 "status": "initialized",
