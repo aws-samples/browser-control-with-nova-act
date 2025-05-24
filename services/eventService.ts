@@ -25,7 +25,7 @@ export interface ThoughtStreamCompleteDetail {
 }
 
 export interface TaskStatusEventDetail {
-  status: 'start' | 'complete';
+  status: 'start' | 'complete' | 'stopped';
   sessionId: string;
   final_answer?: boolean;
 }

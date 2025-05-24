@@ -170,6 +170,24 @@ class BrowserManager:
             print(f"Error closing browser: {e}")
         finally:
             self.browser_initialized = False
+    
+    async def close(self):
+        """Close browser and cleanup resources - called by agent manager"""
+        print(f"\nClosing browser manager for session {self.session_id}...")
+        try:
+            # Close browser first
+            await self.close_browser()
+            
+            # Close MCP session
+            if hasattr(self, 'exit_stack'):
+                try:
+                    await self.exit_stack.aclose()
+                except Exception as e:
+                    print(f"Error closing exit stack: {e}")
+            
+            print(f"Browser manager closed for session {self.session_id}")
+        except Exception as e:
+            print(f"Error closing browser manager: {e}")
 
     async def initialize_browser(self, headless: bool = False, url: str = "https://www.google.com"):
         if not self.session:
@@ -177,18 +195,6 @@ class BrowserManager:
         
         # Check if we should preserve the current URL
         effective_url = url
-        
-        # if url == "https://www.google.com":
-        #     try:
-        #         if self.browser_initialized and self.session:
-        #             status_result = await self.session.call_tool("get_browser_info", {})
-        #             browser_info = self.parse_response(status_result.content[0].text)
-        #             current_url = browser_info.get("current_url", "")
-        #             if current_url:
-        #                 effective_url = current_url
-        #                 print(f"Preserving current browser URL: {current_url} (ignoring default URL)")
-        #     except Exception as e:
-        #         print(f"Error checking current URL: {e}")
         
         print(f"\nInitializing browser (headless: {headless}, url: {effective_url})...")
         result = await self.session.call_tool("initialize_browser", {"headless": headless, "url": effective_url})

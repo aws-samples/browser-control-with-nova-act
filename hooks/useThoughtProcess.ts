@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { dispatchEvent, subscribeToEvent } from '@/services/eventService';
+import { calculateProcessingTime, generateId, shouldFilterEvent } from '@/utils/thoughtProcessingUtils';
 
 // Define ChartData interface
 interface ChartData {
@@ -55,10 +56,13 @@ export function useThoughtProcess(sessionId?: string) {
   const [screenshots, setScreenshots] = useState<Record<string, string>>({});
   const eventSourceRef = useRef<EventSource | null>(null);
   const previousSessionRef = useRef<string | undefined>(undefined);
+  const thoughtsRef = useRef<Thought[]>(thoughts);
 
-  const generateId = useCallback((prefix: string = 'thought') => {
-    return `${prefix}-${Date.now()}-${Math.random().toString(36).substring(2, 15)}`;
-  }, []);
+  // Update thoughtsRef when thoughts change
+  useEffect(() => {
+    thoughtsRef.current = thoughts;
+  }, [thoughts]);
+
 
   const updateThoughts = useCallback((newThought: PartialThought) => {
     const thoughtWithId = {
@@ -205,7 +209,6 @@ export function useThoughtProcess(sessionId?: string) {
   // Handle direct user message additions
   useEffect(() => {
     const unsubscribeUserMessage = subscribeToEvent.userMessageAdded((detail) => {
-      // Add user message directly without sessionId check since this is frontend-only
       const normalizedThought: Thought = {
         id: generateId('user-question'),
         type: 'question',
@@ -256,20 +259,8 @@ export function useThoughtProcess(sessionId?: string) {
         return;
       }
       
-      if (data.type === 'ping' || data.type === 'heartbeat') {
-        return; 
-      }
-      
-      const validTypes = ['thought', 'reasoning', 'tool_call', 'tool_result', 'question', 
-                         'visualization', 'thinking', 'rationale', 'error', 'answer', 'result', 'browser_status', 'others'];
-      const validNodes = ['User', 'Browser', 'Agent', 'NovaAct', 'Answer', 'complete', 'Router', 'Others'];
-      
-      if (!validTypes.includes(data.type) && 
-          !validNodes.includes(data.node) && 
-          data.category !== 'screenshot' &&
-          data.category !== 'visualization_data') {
-        console.log("Filtered callback:", data);
-        return; 
+      if (shouldFilterEvent(data)) {
+        return;
       }
       
       // Ensure timestamp exists and is standardized
@@ -279,30 +270,8 @@ export function useThoughtProcess(sessionId?: string) {
       
       const normalizedThought = normalizeThoughtData(data);
       
-      // For result or answer nodes, calculate processing time if possible
-      if ((data.node === 'Answer' || data.category === 'result') && normalizedThought.timestamp) {
-        // Find the last user question to calculate processing time
-        const lastUserQuestion = [...thoughts].reverse().find(t => t.node === 'User' || t.type === 'question');
-        
-        if (lastUserQuestion?.timestamp) {
-          try {
-            const startTime = new Date(lastUserQuestion.timestamp).getTime();
-            const endTime = new Date(normalizedThought.timestamp).getTime();
-            const processingTimeMs = endTime - startTime;
-            
-            if (processingTimeMs > 0) {
-              const processingTimeSec = (processingTimeMs / 1000).toFixed(2);
-              normalizedThought.technical_details = {
-                ...(normalizedThought.technical_details || {}),
-                processing_time_ms: processingTimeMs,
-                processing_time_sec: parseFloat(processingTimeSec)
-              };
-            }
-          } catch (timeError) {
-            console.error("Error calculating processing time:", timeError);
-          }
-        }
-      }
+      // Calculate processing time if needed
+      calculateProcessingTime(data, normalizedThought, thoughtsRef.current);
       
       if ((data.category === 'screenshot' || data.category === 'visualization_data') && 
           data.technical_details && data.technical_details.screenshot) {

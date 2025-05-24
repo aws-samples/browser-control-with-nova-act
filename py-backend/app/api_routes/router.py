@@ -13,15 +13,12 @@ from app.libs.config.config import CONVERSATION_STORAGE_TYPE, CONVERSATION_FILE_
 from app.libs.utils.error_responses import ErrorResponse, ErrorCode, ErrorSeverity, ErrorMapper
 from pathlib import Path
 
-from app.api_routes.config_routes import router as config_router
 
 # Set up logger with more verbose level for debugging
 logger = logging.getLogger("router_api")
 logger.setLevel(logging.DEBUG)
 router = APIRouter()
 
-# Include the configuration routes
-router.include_router(config_router)
 
 # Initialize conversation storage based on configuration
 if CONVERSATION_STORAGE_TYPE == "file":
@@ -103,11 +100,6 @@ async def router_api(request: Request, background_tasks: BackgroundTasks):
         input_session_id = data.get("session_id")
         session_data = await session_manager.get_or_create_session(input_session_id)
         session_id = session_data.id
-        
-        if input_session_id == session_id:
-            logger.warning(f"Using existing session: {session_id}")
-        else:
-            logger.warning(f"Created new session: {session_id}")
         
         # Register session in thought handler
         thought_handler.register_session(session_id)
@@ -213,4 +205,40 @@ async def process_request(message: str, session_id: str, model_id: str = None, r
             content=f"Task processing failed: {error_response['message']}",
             error_dict=error_response
         )
+
+@router.delete("/session/{session_id}")
+async def terminate_session(session_id: str):
+    """Terminate a session and clean up associated resources"""
+    try:
+        session_manager = get_session_manager()
+        success = await session_manager.terminate_session(session_id)
+        
+        if success:
+            logger.info(f"Session terminated successfully: {session_id}")
+            return {"status": "success", "message": f"Session {session_id} terminated"}
+        else:
+            logger.warning(f"Session not found for termination: {session_id}")
+            return {"status": "not_found", "message": f"Session {session_id} not found"}
+            
+    except Exception as e:
+        logger.error(f"Error terminating session {session_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to terminate session: {str(e)}")
+
+@router.post("/session/{session_id}/terminate")
+async def terminate_session_post(session_id: str):
+    """Terminate a session via POST (for sendBeacon compatibility)"""
+    try:
+        session_manager = get_session_manager()
+        success = await session_manager.terminate_session(session_id)
+        
+        if success:
+            logger.info(f"Session terminated successfully via POST: {session_id}")
+            return {"status": "success", "message": f"Session {session_id} terminated"}
+        else:
+            logger.warning(f"Session not found for termination via POST: {session_id}")
+            return {"status": "not_found", "message": f"Session {session_id} not found"}
+            
+    except Exception as e:
+        logger.error(f"Error terminating session {session_id} via POST: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to terminate session: {str(e)}")
         
