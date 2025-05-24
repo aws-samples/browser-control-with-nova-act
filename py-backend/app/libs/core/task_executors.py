@@ -162,14 +162,6 @@ class NavigationExecutor(BaseTaskExecutor):
                 }
             )
             
-            log_thought(
-                session_id=session_id,
-                type_name="command_complete", 
-                category="completion",
-                node="complete",
-                content=f"Navigation completed to {url}",
-                command_id=f"cmd-navigate-{int(time.time())}"
-            )
             
             return {
                 "type": "navigate",

@@ -261,8 +261,8 @@ export function useThoughtProcess(sessionId?: string) {
       }
       
       const validTypes = ['thought', 'reasoning', 'tool_call', 'tool_result', 'question', 
-                         'visualization', 'thinking', 'rationale', 'error', 'answer', 'result', 'browser_status'];
-      const validNodes = ['User', 'Browser', 'Agent', 'NovaAct', 'Answer', 'complete', 'Router'];
+                         'visualization', 'thinking', 'rationale', 'error', 'answer', 'result', 'browser_status', 'others'];
+      const validNodes = ['User', 'Browser', 'Agent', 'NovaAct', 'Answer', 'complete', 'Router', 'Others'];
       
       if (!validTypes.includes(data.type) && 
           !validNodes.includes(data.node) && 

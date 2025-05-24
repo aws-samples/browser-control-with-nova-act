@@ -19,10 +19,12 @@ class PathManager:
     def __init__(self):
         if not self._initialized:
             self._initialized = True
-            self.current_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-            self.project_root = os.path.abspath(os.path.join(self.current_dir, "../"))
-            self.act_agent_dir = os.path.join(self.project_root, "app/act_agent")
-            self.server_path = os.path.join(self.project_root, "app/act_agent/server/nova-act-server/nova_act_server.py")
+            # Current file: /py-backend/app/libs/utils/utils.py
+            # Need to go up to /py-backend/app/
+            self.current_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            self.project_root = self.current_dir  # This is /py-backend/app/
+            self.act_agent_dir = os.path.join(self.project_root, "act_agent")
+            self.server_path = os.path.join(self.project_root, "act_agent/server/nova-act-server/nova_act_server.py")
             
             logger.info(f"PathManager initialized: project_root={self.project_root}")
             
@@ -44,7 +46,7 @@ def get_or_create_session_id(session_id: Optional[str] = None, prefix: str = "se
     return new_session_id
 
 def register_session_and_thought_handler(session_id: str) -> str:
-    from app.libs.thought_stream import thought_handler
+    from app.libs.utils.thought_stream import thought_handler
     thought_handler.register_session(session_id)
     logger.info(f"Registered session in thought handler: {session_id}")
     return session_id
