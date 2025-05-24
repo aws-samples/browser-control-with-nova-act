@@ -24,6 +24,12 @@ class ThoughtHandler:
         self.events[session_id] = Event()
         return self.queues[session_id]
     
+    def is_connected(self, session_id: str) -> bool:
+        """Check if session is connected and ready"""
+        return (session_id in self.queues and 
+                session_id in self.events and 
+                session_id in self.callbacks)
+    
     def unregister_session(self, session_id: str):
         """Remove a session and clean up resources"""
         if session_id in self.queues:

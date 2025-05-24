@@ -1,17 +1,19 @@
 import asyncio
-import os
 import json
-from typing import Optional, Dict, Any
-from contextlib import AsyncExitStack
-from mcp import ClientSession, StdioServerParameters
-from mcp.client.stdio import stdio_client
+import logging
+import os
 import signal
 import subprocess
 import time
-import logging
+from contextlib import AsyncExitStack
+from typing import Optional, Dict, Any
 
-logger = logging.getLogger("browser_agent")
-class BrowserAgent:
+from mcp import ClientSession, StdioServerParameters
+from mcp.client.stdio import stdio_client
+
+logger = logging.getLogger("browser_manager")
+
+class BrowserManager:
     def __init__(self, server_config=None):
         self.session: Optional[ClientSession] = None
         self.exit_stack = AsyncExitStack()
@@ -197,6 +199,60 @@ class BrowserAgent:
         print(f"Browser initialized: {self.format_output(response_data)}")
         self.browser_initialized = True
         return response_data
+
+
+    async def restart_browser(self, headless: bool = None, url: str = None, preserve_url: bool = True):
+        """
+        Restart browser while optionally preserving the current URL.
+        
+        Args:
+            headless (bool, optional): Whether to run in headless mode
+            url (str, optional): URL to navigate to after restart
+            preserve_url (bool): Whether to preserve current URL if no url is provided
+            
+        Returns:
+            dict: Status of the restart operation
+        """
+        if not self.session:
+            raise RuntimeError("Not connected to MCP server")
+        
+        # If we need to preserve the current URL and no URL was specified
+        if preserve_url and url is None:
+            try:
+                if self.browser_initialized and self.session:
+                    # Get the current browser state
+                    state_result = await self.session.call_tool("take_screenshot", {})
+                    browser_state = self.parse_response(state_result.content[0].text)
+                    current_url = browser_state.get("current_url", "")
+                    
+                    if current_url and current_url != "about:blank":
+                        # Use current URL for restart
+                        url = current_url
+                        print(f"Will restart browser with current URL: {url}")
+            except Exception as e:
+                print(f"Error getting current URL for restart: {e}")
+                # Continue with default URL
+        
+        print(f"\nRestarting browser (headless: {headless}, url: {url}, preserve_url: {preserve_url})...")
+        try:
+            result = await self.session.call_tool("restart_browser", {
+                "headless": headless,
+                "url": url
+            })
+            
+            response_data = self.parse_response(result.content[0].text)
+            print(f"Browser restarted: {self.format_output(response_data)}")
+            
+            self.browser_initialized = True
+            return response_data
+        except Exception as e:
+            print(f"Error restarting browser: {e}")
+            self.browser_initialized = False
+            return {
+                "status": "error", 
+                "message": f"Failed to restart browser: {str(e)}"
+            }
+
 
     async def cleanup(self):
         print("\nCleaning up resources...")

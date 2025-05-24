@@ -4,8 +4,7 @@ import traceback
 import re
 from typing import Dict, Any, Optional, List
 import boto3
-from app.libs.prompts import ROUTER_PROMPT, ROUTER_TOOL
-from app.libs.decorators import log_thought
+from app.libs.config.prompts import ROUTER_PROMPT, ROUTER_TOOL
 
 logger = logging.getLogger("task_classifier")
 
@@ -53,7 +52,7 @@ class TaskClassifier:
         try:            
             # Prepare messages once - no double filtering
             if conversation_history:
-                from app.libs.conversation_manager import prepare_messages_for_bedrock
+                from app.libs.data.conversation_manager import prepare_messages_for_bedrock
                 filtered_messages = prepare_messages_for_bedrock(conversation_history)
             else:
                 filtered_messages = [{"role": "user", "content": [{"text": user_message}]}]

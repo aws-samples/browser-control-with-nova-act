@@ -52,6 +52,8 @@ class BrowserController:
                 user_data_dir=DEFAULT_BROWSER_SETTINGS.get("user_data_dir"),
                 clone_user_data_dir=DEFAULT_BROWSER_SETTINGS.get("clone_user_data_dir", True),
                 #quiet=DEFAULT_BROWSER_SETTINGS.get("quiet", False),
+                screen_width=1600,
+                screen_height=1200,
                 logs_directory=DEFAULT_BROWSER_SETTINGS.get("logs_directory"),
                 record_video=DEFAULT_BROWSER_SETTINGS.get("record_video", False)
             )
@@ -110,22 +112,52 @@ class BrowserController:
             raise RuntimeError("Browser not initialized")
             
         try:
-            screenshot_bytes = self.nova.page.screenshot(type='jpeg', quality=quality)
+            # Use lower quality for better performance
+            adjusted_quality = min(quality, 65)  # Cap quality at 65 for better performance
             
+            # Use Playwright's built-in clip functionality if available for better performance
+            viewport = self.nova.page.viewport_size
+            if viewport and max_width < viewport.get('width', 1600):
+                # Calculate clip dimensions to reduce image size before processing
+                clip_width = min(viewport.get('width', 1600), 1200)  # Reasonable max width
+                clip_height = min(viewport.get('height', 900), 1500)  # Reasonable max height
+                
+                screenshot_bytes = self.nova.page.screenshot(
+                    type='jpeg', 
+                    quality=adjusted_quality,
+                    clip={'x': 0, 'y': 0, 'width': clip_width, 'height': clip_height}
+                )
+            else:
+                # Take full screenshot
+                screenshot_bytes = self.nova.page.screenshot(type='jpeg', quality=adjusted_quality)
+            
+            # Process with PIL only if necessary
             from PIL import Image
             import io
             
-            image = Image.open(io.BytesIO(screenshot_bytes))
-            
-            if image.width > max_width:
-                ratio = max_width / image.width
-                new_height = int(image.height * ratio)
-                image = image.resize((max_width, new_height), Image.LANCZOS)
+            # Use a more efficient approach with BytesIO
+            with io.BytesIO(screenshot_bytes) as input_buffer:
+                image = Image.open(input_buffer)
                 
-                buffer = io.BytesIO()
-                image.save(buffer, format='JPEG', quality=quality)
-                screenshot_bytes = buffer.getvalue()
+                # Only resize if needed (significant size reduction)
+                if image.width > max_width:
+                    ratio = max_width / image.width
+                    new_height = int(image.height * ratio)
+                    # Use BICUBIC for better performance than LANCZOS
+                    image = image.resize((max_width, new_height), Image.BICUBIC)
+                    
+                    with io.BytesIO() as output_buffer:
+                        # Use optimized settings for JPEG
+                        image.save(
+                            output_buffer, 
+                            format='JPEG', 
+                            quality=adjusted_quality,
+                            optimize=True,
+                            progressive=True
+                        )
+                        screenshot_bytes = output_buffer.getvalue()
             
+            # Calculate size and encode
             byte_size = len(screenshot_bytes)
             base64_data = base64.b64encode(screenshot_bytes).decode('utf-8')
             
@@ -170,39 +202,31 @@ class BrowserController:
             return "Error getting content"
     
     def close(self) -> bool:
+        """종료 처리를 최소화하고 참조만 제거하여 리소스 누수 방지"""
         if not hasattr(self, 'nova') or self.nova is None:
-            logger.info("Browser already closed or not initialized")
+            # 이미 종료되었거나 초기화되지 않음
             return True
-            
+        
         try:
-            logger.info("Attempting to close browser")
+            # 참조 제거 전 로깅
+            logger.info("Closing browser and clearing references")
             
-            nova_instance = self.nova
+            # Nova 인스턴스에 대한 참조 제거
+            if hasattr(self.nova, '_playwright'):
+                # 참조 순환을 방지하기 위해 내부 참조도 명시적으로 제거
+                self.nova._playwright = None
+                
+            if hasattr(self.nova, '_dispatcher'):
+                self.nova._dispatcher = None
+                
+            # Nova 인스턴스 자체 참조 제거
             self.nova = None
             
-            import threading
-            current_thread_id = threading.get_ident()
-            logger.info(f"Close attempting in thread ID: {current_thread_id}")
-            
-            try:
-                if hasattr(nova_instance, "stop") and callable(getattr(nova_instance, "stop")):
-                    try:
-                        nova_instance._playwright.stop()
-                    except Exception as e_pw:
-                        logger.warning(f"Non-critical error stopping Playwright: {str(e_pw)}")
-                    
-                    nova_instance._dispatcher = None
-                    logger.info("Browser resources cleaned up")
-                else:
-                    logger.warning("No proper close method found")
-            except Exception as e:
-                logger.error(f"Error during browser close operation: {str(e)}")
-                logger.error(f"Exception type: {type(e).__name__}")
-                logger.error(f"Exception traceback: {traceback.format_exc()}")
+            # 명시적으로 가비지 컬렉션 실행
+            import gc
+            gc.collect()
             
             return True
-            
         except Exception as e:
-            logger.error(f"Critical error in close method: {str(e)}")
-            logger.error(f"Exception traceback: {traceback.format_exc()}")
+            logger.error(f"Error clearing references: {e}")
             return False

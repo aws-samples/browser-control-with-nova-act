@@ -1,34 +1,9 @@
 import { NextRequest } from "next/server";
+import { apiClient } from "@/utils/apiClient";
 
-// Configuration
-const BACKEND_URL = "http://localhost:8000/api/router";
-const MAX_RETRIES = 3;
-const RETRY_DELAY = 1000; // 1 second
-const REQUEST_TIMEOUT = 10000; // 10 seconds
+// Route path to the backend router API
+const ROUTER_API_PATH = "/api/router";
 
-const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
-
-async function fetchWithRetry(url: string, options: RequestInit, retries = MAX_RETRIES) {
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT);
-    
-    const response = await fetch(url, {
-      ...options,
-      signal: controller.signal
-    });
-    
-    clearTimeout(timeoutId);
-    return response;
-  } catch (error) {
-    if (retries > 0) {
-      console.log(`Retrying connection to backend (${retries} attempts left)...`);
-      await sleep(RETRY_DELAY);
-      return fetchWithRetry(url, options, retries - 1);
-    }
-    throw error;
-  }
-}
 
 export async function POST(req: NextRequest) {
   try {
@@ -51,10 +26,9 @@ export async function POST(req: NextRequest) {
     
     console.log("Router API forwarding request to backend:", body.messages.length, "messages");
     
-    // Use the retry logic
-    const response = await fetchWithRetry(BACKEND_URL, {
+    // Use the API client for consistent error handling and retries
+    const response = await apiClient.request(ROUTER_API_PATH, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
     
@@ -71,8 +45,12 @@ export async function POST(req: NextRequest) {
   } catch (error) {
     console.error("Router API: Error in POST handler:", error);
     
+    // Handle different error types
+    const errorName = error.name;
+    const errorMessage = error.message;
+    
     // Check if it's an abort error (timeout)
-    if (error.name === 'AbortError') {
+    if (errorName === 'AbortError') {
       return new Response(
         JSON.stringify({ error: "Request to backend timed out. Please try again." }),
         { status: 504 }
@@ -93,7 +71,7 @@ export async function POST(req: NextRequest) {
     return new Response(
       JSON.stringify({ 
         error: "An error occurred while processing the request",
-        details: error.message
+        details: errorMessage || "Unknown error"
       }),
       { status: 500 }
     );

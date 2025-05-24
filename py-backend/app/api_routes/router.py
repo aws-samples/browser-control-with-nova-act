@@ -1,18 +1,16 @@
 # app/api_routes/router.py
 
 from fastapi import APIRouter, Request, BackgroundTasks, HTTPException, Depends
-import asyncio
-import time
 import logging
-import traceback
 
-from app.libs.thought_stream import thought_handler
-from app.services.session_service import session_service
-from app.libs.decorators import with_thought_callback, log_thought
-from app.libs.task_supervisor import TaskSupervisor
-from app.libs.conversation_store import FileConversationStore, MemoryConversationStore
-from app.libs.conversation_manager import ConversationManager
-from app.libs.config import CONVERSATION_STORAGE_TYPE, CONVERSATION_FILE_TTL_DAYS, CONVERSATION_CLEANUP_INTERVAL
+from app.libs.utils.thought_stream import thought_handler
+from app.libs.data.session_manager import get_session_manager
+from app.libs.utils.decorators import with_thought_callback, log_thought
+from app.libs.core.task_supervisor import TaskSupervisor
+from app.libs.data.conversation_store import FileConversationStore, MemoryConversationStore
+from app.libs.data.conversation_manager import ConversationManager
+from app.libs.config.config import CONVERSATION_STORAGE_TYPE, CONVERSATION_FILE_TTL_DAYS, CONVERSATION_CLEANUP_INTERVAL
+from app.libs.utils.error_responses import ErrorResponse, ErrorCode, ErrorSeverity, ErrorMapper
 from pathlib import Path
 
 from app.api_routes.config_routes import router as config_router
@@ -46,8 +44,11 @@ else:
 # Create conversation manager
 conversation_manager = ConversationManager(conversation_store)
 
+# Import agent manager from instance module to avoid circular imports
+from app.libs.core.agent_manager import get_agent_manager
+
 # Singleton instance of TaskSupervisor shared across requests with persistent storage
-task_supervisor = TaskSupervisor(conversation_store=conversation_store)
+task_supervisor = TaskSupervisor(conversation_store=conversation_store, agent_manager=get_agent_manager())
 
 # Log application startup information
 if CONVERSATION_STORAGE_TYPE == "file":
@@ -59,6 +60,34 @@ else:
 async def router_health_check():
     return {"status": "healthy", "message": "Router API is working"}
 
+@router.get("/validate-session/{session_id}")
+async def validate_session(session_id: str):
+    """Validate if a session exists and is active"""
+    try:
+        session_manager = get_session_manager()
+        session = await session_manager.validate_session(session_id)
+        
+        if session:
+            return {
+                "valid": True,
+                "message": "Session is valid",
+                "session_id": session_id,
+                "expires_at": session.expires_at.isoformat()
+            }
+        else:
+            return {
+                "valid": False,
+                "message": "Session not found or expired",
+                "session_id": session_id
+            }
+    except Exception as e:
+        logger.error(f"Error validating session {session_id}: {e}")
+        return {
+            "valid": False,
+            "message": f"Validation error: {str(e)}",
+            "session_id": session_id
+        }
+
 @router.post("/")
 async def router_api(request: Request, background_tasks: BackgroundTasks):
     try:
@@ -69,14 +98,16 @@ async def router_api(request: Request, background_tasks: BackgroundTasks):
         model = data.get("model", "")
         region = data.get("region", "")
         
-        # Session handling: validate existing or create new
+        # Session handling: validate existing or create new using new session manager
+        session_manager = get_session_manager()
         input_session_id = data.get("session_id")
-        if input_session_id and session_service.get_session(input_session_id):
-            session_id = input_session_id
-            logger.info(f"Using existing session: {session_id}")
+        session_data = await session_manager.get_or_create_session(input_session_id)
+        session_id = session_data.id
+        
+        if input_session_id == session_id:
+            logger.warning(f"Using existing session: {session_id}")
         else:
-            session_id = session_service.create_session()
-            logger.info(f"Created new session: {session_id}")
+            logger.warning(f"Created new session: {session_id}")
         
         # Register session in thought handler
         thought_handler.register_session(session_id)
@@ -120,8 +151,19 @@ async def router_api(request: Request, background_tasks: BackgroundTasks):
         }
     
     except Exception as e:
-        logger.error(f"Router API error: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        error_code = ErrorMapper.map_exception_to_error_code(e)
+        severity = ErrorMapper.get_severity_for_exception(e)
+        
+        error_response = ErrorResponse.log_and_create_error(
+            exception=e,
+            error_code=error_code,
+            context="router_api_processing",
+            session_id=session_id,
+            severity=severity
+        )
+        
+        status_code = 500 if severity in [ErrorSeverity.HIGH, ErrorSeverity.CRITICAL] else 400
+        raise HTTPException(status_code=status_code, detail=error_response)
 
 @with_thought_callback(category="request_processing", node_name="process_request")
 async def process_request(message: str, session_id: str, model_id: str = None, region: str = None):
@@ -131,25 +173,11 @@ async def process_request(message: str, session_id: str, model_id: str = None, r
         # Use the global task supervisor instance
         global task_supervisor
         
-        # Check if conversation exists before processing
-        exists = await task_supervisor.conversation_store.exists(session_id)
-        
-        if exists:
-            messages = await task_supervisor.conversation_store.load(session_id)
-        
         # Process the request
         result = await task_supervisor.process_request(message, session_id, model_id, region)
         
         # Extract outcome data
-        execution_type = result.get("type", "unknown")
-        answer = result.get("answer", "")
-        error = result.get("error", None)    
-        
-        # Check conversation after processing
-        exists_after = await task_supervisor.conversation_store.exists(session_id)
-        
-        if exists_after:
-            messages_after = await task_supervisor.conversation_store.load(session_id)
+        error = result.get("error", None)
                 
         # Handle errors
         if error:
@@ -158,24 +186,31 @@ async def process_request(message: str, session_id: str, model_id: str = None, r
                 type_name="error",
                 category="error",
                 node="Router",
-                content=f"Error during {execution_type}: {error}"
+                content=f"Error during processing: {error}"
             )
         
-        # Final completion log
-        if not error:
-            log_thought(
-                session_id=session_id,
-                type_name="command_complete",
-                category="completion",
-                node="complete",
-                content=f"Request completed via {execution_type}",
-                command_id=f"req-{execution_type}-{int(time.time())}"
-            )
-        
-        await asyncio.sleep(1)
+        # No need for artificial delay at the end of processing
         
     except Exception as e:
-        error_message = f"Error processing request: {str(e)}"
-        logger.error(error_message)
-        logger.error(f"Exception details: {traceback.format_exc()}")
+        
+        error_code = ErrorMapper.map_exception_to_error_code(e)
+        severity = ErrorMapper.get_severity_for_exception(e)
+        
+        error_response = ErrorResponse.log_and_create_error(
+            exception=e,
+            error_code=error_code,
+            context="task_processing",
+            session_id=session_id,
+            severity=severity
+        )
+        
+        # Log error thought for user visibility
+        log_thought(
+            session_id=session_id,
+            type_name="error",
+            category="execution_error",
+            node="TaskProcessor",
+            content=f"Task processing failed: {error_response['message']}",
+            error_dict=error_response
+        )
         

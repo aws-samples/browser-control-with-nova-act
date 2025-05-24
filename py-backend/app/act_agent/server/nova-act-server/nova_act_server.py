@@ -353,27 +353,28 @@ async def close_browser() -> Dict[str, Any]:
         return create_error_response(e, "close browser")
 
 @mcp.tool()
-async def restart_browser(headless: bool = True, url: str = "about:blank") -> Dict[str, Any]:
-    """
-    Close and restart the browser. Use when browser state becomes problematic or when facing CAPTCHA/verification challenges.
+async def restart_browser(headless: bool = False, url: str = None):
+    """Tool to restart the browser.
     
     Args:
-        headless: Whether to run the restarted browser in headless mode
-        url: Starting URL for the new browser session
+        - headless (bool): Whether to start in headless mode
+        - url (str): URL to navigate to after restarting
+    
+    Returns:
+        dict: Status of the restart operation
     """
     try:
-        close_result = await close_browser()
-        init_result = await initialize_browser(headless=headless, url=url)
+        # Close the current browser
+        await close_browser()
         
-        return {
-            "status": "success" if init_result.get("status") == "success" else "error",
-            "message": "Browser restarted successfully" if init_result.get("status") == "success" else "Failed to restart browser",
-            "close_result": close_result,
-            "initialize_result": init_result,
-            "screenshot": init_result.get("screenshot")
-        }
+        return await initialize_browser(headless, url)
+    
     except Exception as e:
-        return create_error_response(e, "restart browser")
+        return {
+            "status": "error",
+            "message": f"Failed to restart browser: {str(e)}"
+        }
+
 
 @mcp.tool()
 async def take_screenshot(max_width: int = 800, quality: int = 70) -> Dict[str, Any]:
@@ -415,23 +416,40 @@ async def take_screenshot(max_width: int = 800, quality: int = 70) -> Dict[str, 
 
 def cleanup_resources_sync():
     """
-    Synchronously cleanup resources to handle abrupt termination
+    간소화된 종료 처리 - 참조 제거를 통해 리소스 누수 방지
     """
     global _browser_controller, _is_shutting_down
     _is_shutting_down = True
     
     if _browser_controller is not None:
         try:
-            logger.info("Closing browser synchronously...")
-            if hasattr(_browser_controller, 'close'):
-                _browser_controller.close()
+            logger.info("Closing browser resources...")
+            
+            # 전역 참조 해제
+            controller_ref = _browser_controller
             _browser_controller = None
-            logger.info("Browser closed successfully")
+            
+            # 심플하게 close 메서드만 호출
+            if hasattr(controller_ref, 'close'):
+                try:
+                    controller_ref.close()
+                except Exception as e:
+                    # 오류가 발생해도 무시하고 계속 진행
+                    pass
+            
+            # 직접 참조 해제
+            controller_ref = None
+            
+            # 명시적으로 가비지 컬렉션 실행
+            import gc
+            gc.collect()
+            
+            logger.info("Resource cleanup completed")
         except Exception as e:
-            logger.error(f"Error closing browser: {str(e)}")
-            _browser_controller = None
+            # 오류 발생 시 로깅만 하고 진행
+            logger.error(f"Error during cleanup: {str(e)}")
     
-    logger.info("Sync cleanup completed")
+    # 종료 프로세스 계속 진행
 
 # Use ThreadPoolExecutor for timeout-safe shutdown
 async def shutdown_server(timeout=5.0):
@@ -449,30 +467,69 @@ async def shutdown_server(timeout=5.0):
     logger.info(f"Starting graceful shutdown with {timeout}s timeout...")
     _is_shutting_down = True
     
+    # First try to cancel all running tasks
+    cancelled_tasks = 0
     try:
-        for task in asyncio.all_tasks():
-            if task is not asyncio.current_task():
-                task.cancel()
+        tasks = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
+        logger.info(f"Cancelling {len(tasks)} running tasks")
+        
+        for task in tasks:
+            task.cancel()
+            cancelled_tasks += 1
+        
+        # Give tasks some time to cancel
+        if tasks:
+            try:
+                await asyncio.wait(tasks, timeout=min(2.0, timeout/2))
+            except (asyncio.CancelledError, Exception):
+                pass
     except Exception as e:
         logger.error(f"Error cancelling tasks: {str(e)}")
     
+    logger.info(f"Cancelled {cancelled_tasks} tasks")
+    
+    # Now close the browser
     if _browser_controller is not None:
         try:
             logger.info("Closing browser...")
-            with concurrent.futures.ThreadPoolExecutor() as executor:
-                future = executor.submit(cleanup_resources_sync)
-                try:
-                    await asyncio.wait_for(
-                        asyncio.wrap_future(future),
-                        timeout=timeout
-                    )
-                except (asyncio.TimeoutError, Exception) as e:
-                    logger.error(f"Browser close problem: {str(e)}")
+            try:
+                # First try close in current thread if possible
+                if hasattr(_browser_controller, 'close') and callable(_browser_controller.close):
+                    try:
+                        result = _browser_controller.close()
+                        logger.info(f"Direct browser close result: {result}")
+                    except Exception as direct_error:
+                        logger.error(f"Direct browser close failed: {direct_error}")
+                
+                # Then try with executor as backup
+                with concurrent.futures.ThreadPoolExecutor() as executor:
+                    future = executor.submit(cleanup_resources_sync)
+                    try:
+                        await asyncio.wait_for(
+                            asyncio.wrap_future(future),
+                            timeout=min(3.0, timeout * 0.6)  # Use shorter timeout for browser close
+                        )
+                    except (asyncio.TimeoutError, Exception) as e:
+                        logger.warning(f"Browser close through executor had issues: {str(e)}")
+            except Exception as close_error:
+                logger.error(f"Error in browser close routine: {close_error}")
         finally:
+            # Always null the controller reference
             _browser_controller = None
     
+    # Set shutdown event
     if _shutdown_event:
-        _shutdown_event.set()
+        try:
+            _shutdown_event.set()
+        except Exception as e:
+            logger.error(f"Error setting shutdown event: {e}")
+    
+    # Force garbage collection
+    try:
+        import gc
+        gc.collect()
+    except:
+        pass
     
     logger.info("Shutdown completed")
 

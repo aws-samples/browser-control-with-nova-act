@@ -1,8 +1,9 @@
 import logging
 import functools
 import asyncio
+import time
 from typing import Dict, Callable, Any, Optional, Type, Union
-from app.libs.thought_stream import thought_handler
+from app.libs.utils.thought_stream import thought_handler
 
 logger = logging.getLogger(__name__)
 
@@ -69,7 +70,6 @@ def with_thought_callback(category: str, node_name: Optional[str] = None):
             return sync_wrapper
     
     return decorator
-
 
 def _send_thought(session_id: Optional[str], type_name: str, category: str, node: str, 
                  content: Union[str, Dict[str, Any]], **kwargs) -> None:

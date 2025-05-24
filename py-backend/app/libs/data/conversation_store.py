@@ -38,11 +38,18 @@ class MemoryConversationStore(ConversationStore):
         self.last_accessed = {}
         self.ttl_seconds = ttl_seconds
         self.cleanup_interval = cleanup_interval
+        self._cleanup_task = None
         self._start_cleanup_task()
     
     def _start_cleanup_task(self):
         """Start background task to clean up expired conversations."""
-        asyncio.create_task(self._cleanup_loop())
+        try:
+            # Only create task if event loop is running
+            loop = asyncio.get_running_loop()
+            self._cleanup_task = loop.create_task(self._cleanup_loop())
+        except RuntimeError:
+            # No event loop running, skip cleanup task
+            logger.debug("No event loop running, skipping cleanup task initialization")
     
     async def _cleanup_loop(self):
         """Periodically clean up expired conversations."""
@@ -101,6 +108,15 @@ class MemoryConversationStore(ConversationStore):
         except Exception as e:
             logger.error(f"Failed to clear conversation for session {session_id}: {e}")
             return False
+    
+    async def shutdown(self):
+        """Shutdown the conversation store and cleanup background tasks."""
+        if self._cleanup_task and not self._cleanup_task.done():
+            self._cleanup_task.cancel()
+            try:
+                await self._cleanup_task
+            except asyncio.CancelledError:
+                logger.debug("Cleanup task cancelled successfully")
 
 
 class FileConversationStore(ConversationStore):

@@ -1,8 +1,10 @@
 // constants.ts
 export const models = [
     { id: "anthropic.claude-3-5-haiku-20241022-v1:0", name: "Claude 3.5 Haiku" },
-    { id: "anthropic.claude-3-5-sonnet-20241022-v2:0", name: "Claude 3.5 Sonnet" },
+//    { id: "anthropic.claude-3-5-sonnet-20241022-v2:0", name: "Claude 3.5 Sonnet" },
     { id: "us.anthropic.claude-3-7-sonnet-20250219-v1:0", name: "Claude 3.7 Sonnet" },
+    { id: "us.anthropic.claude-sonnet-4-20250514-v1:0", name: "Claude 4.0 Sonnet" },
+    { id: "us.anthropic.claude-opus-4-20250514-v1:0", name: "Claude 4.0 Opus" },
     { id: "us.amazon.nova-pro-v1:0", name: "Nova Pro" },
     { id: "us.amazon.nova-premier-v1:0", name: "Nova Premier" },
     { id: "us.writer.palmyra-x5-v1:0", name: "Palmyra X5" },    
