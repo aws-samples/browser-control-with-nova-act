@@ -31,7 +31,7 @@ interface BaseThought {
   node?: string;
   from_router?: boolean;
   id: string;
-  category?: 'setup' | 'analysis' | 'tool' | 'result' | 'error' | 'visualization_data' | 'screenshot' | 'user_input';
+  category?: 'setup' | 'analysis' | 'tool' | 'result' | 'error' | 'visualization_data' | 'screenshot' | 'user_input' | 'user_control';
   technical_details?: Record<string, any>;
   visualization?: {
     chart_data: ChartData;
@@ -172,6 +172,19 @@ export function useThoughtProcess(sessionId?: string) {
         type: 'reasoning',
         node: data.node || 'Agent',
         category: data.category || 'analysis',
+        content: data.content || '',
+        timestamp: currentTimestamp
+      } as Thought;
+    }
+    
+    // Handle user control events (Take Control/Release Control)
+    if (data.type === 'user_control' || data.category === 'user_control') {
+      return {
+        ...data,
+        id: generateId('user-control'),
+        type: 'user_control',
+        node: data.node || 'User Control',
+        category: 'user_control',
         content: data.content || '',
         timestamp: currentTimestamp
       } as Thought;

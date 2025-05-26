@@ -27,11 +27,12 @@ class BrowserController:
             return 'https://' + url
         return url
 
-    def initialize_browser(self, headless: bool = True, starting_url: str = None) -> Tuple[bool, Optional[Dict[str, Any]]]:
+    def initialize_browser(self, headless: bool = True, starting_url: str = None) -> Tuple[bool, Optional[Dict[str, Any]], Optional[str]]:
         print(f"DEBUG: Initializing browser with headless={headless}")
         if not self.api_key:
-            logger.error("Nova Act API key not found in environment variables")
-            return False, None
+            error_msg = "Nova Act API key not found in environment variables"
+            logger.error(error_msg)
+            return False, None, error_msg
             
         try:
             url = starting_url or DEFAULT_BROWSER_SETTINGS.get("start_url", "https://www.google.com")
@@ -59,15 +60,38 @@ class BrowserController:
             )
             
             self.nova.start()
-            self.nova.page.wait_for_load_state("networkidle", timeout=30000)
+            # Use more practical loading states - domcontentloaded is more reliable
+            try:
+                # First wait for DOM to be ready (faster and more reliable)
+                self.nova.page.wait_for_load_state("domcontentloaded", timeout=10000)
+                logger.info("Page DOM loaded successfully")
+                
+                # Then give a short time for critical resources
+                try:
+                    self.nova.page.wait_for_load_state("load", timeout=5000)
+                    logger.info("Page fully loaded")
+                except Exception:
+                    logger.info("Page load event timeout, but DOM is ready - proceeding")
+                    
+            except Exception as dom_e:
+                logger.warning(f"DOM load failed after 10s, checking browser functionality...")
+                try:
+                    current_url = self.nova.page.url
+                    title = self.nova.page.title()
+                    logger.info(f"Browser functional: {current_url} - {title}")
+                except Exception:
+                    raise Exception(f"Browser initialization failed: {dom_e}")
+                    
+            logger.info("Browser initialization completed")
             
             screenshot_data = self.take_screenshot()
             logger.info("Browser successfully initialized")
-            return True, screenshot_data
+            return True, screenshot_data, None
             
         except Exception as e:
-            logger.error(f"Error initializing browser: {str(e)}")
-            return False, None
+            error_msg = str(e)
+            logger.error(f"Error initializing browser: {error_msg}")
+            return False, None, error_msg
 
     def go_to_url(self, url: str, wait_until: str = "networkidle", timeout: int = None) -> Dict[str, Any]:
         if not self.is_initialized():

@@ -4,7 +4,7 @@ interface Thought {
   timestamp?: string;
   node?: string;
   id: string;
-  category?: 'setup' | 'analysis' | 'tool' | 'result' | 'error' | 'visualization_data' | 'screenshot' | 'user_input';
+  category?: 'setup' | 'analysis' | 'tool' | 'result' | 'error' | 'visualization_data' | 'screenshot' | 'user_input' | 'user_control';
   technical_details?: Record<string, any>;
 }
 
@@ -66,14 +66,14 @@ export function shouldFilterEvent(data: any): boolean {
   }
   
   const validTypes = ['thought', 'reasoning', 'tool_call', 'tool_result', 'question', 
-                     'visualization', 'thinking', 'rationale', 'error', 'answer', 'result', 'browser_status', 'others'];
-  const validNodes = ['User', 'Browser', 'Agent', 'NovaAct', 'Answer', 'complete', 'Router', 'Others'];
+                     'visualization', 'thinking', 'rationale', 'error', 'answer', 'result', 'browser_status', 'others', 'user_control'];
+  const validNodes = ['User', 'Browser', 'Agent', 'NovaAct', 'Answer', 'complete', 'Router', 'Others', 'User Control'];
   
   if (!validTypes.includes(data.type) && 
       !validNodes.includes(data.node) && 
       data.category !== 'screenshot' &&
-      data.category !== 'visualization_data') {
-    console.log("Filtered callback:", data);
+      data.category !== 'visualization_data' &&
+      data.category !== 'user_control') {
     return true;
   }
   

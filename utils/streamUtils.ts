@@ -21,7 +21,7 @@ export class EventStreamManager {
   }
 
   connect() {
-    this.close(); // 기존 연결 닫기
+    this.close();
     
     try {
       this.eventSource = new EventSource(this.url);

@@ -85,6 +85,8 @@ async def validate_session(session_id: str):
             "session_id": session_id
         }
 
+
+
 @router.post("/")
 async def router_api(request: Request, background_tasks: BackgroundTasks):
     try:

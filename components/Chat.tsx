@@ -22,6 +22,7 @@ interface ChatProps {
   models: Model[];
   regions: { id: string; name: string }[];
   isThinking: boolean;
+  isUserControlInProgress?: boolean;
   fileInputRef: React.RefObject<HTMLInputElement>;
   onInputChange: (event: React.ChangeEvent<HTMLTextAreaElement>) => void;
   onKeyDown: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void;
@@ -65,6 +66,7 @@ const Chat: React.FC<ChatProps> = ({
   models,
   regions,
   isThinking,
+  isUserControlInProgress = false,
   fileInputRef,  
   onInputChange,
   onKeyDown,
@@ -260,7 +262,7 @@ const Chat: React.FC<ChatProps> = ({
                   variant="ghost"
                   size="icon"
                   onClick={() => fileInputRef.current?.click()}
-                  disabled={isLoading}
+                  disabled={isLoading || isUserControlInProgress}
                   className="absolute left-2 top-1/2 -translate-y-1/2 h-8 w-8 text-gray-500"
                 >
                   <Paperclip className="h-5 w-5" />
@@ -269,15 +271,15 @@ const Chat: React.FC<ChatProps> = ({
                   value={input}
                   onChange={onInputChange}
                   onKeyDown={onKeyDown}
-                  placeholder="Ask me to visit websites or help with web tasks..."
-                  disabled={isLoading}
+                  placeholder={isUserControlInProgress ? "User Control in progress..." : "Ask me to visit websites or help with web tasks..."}
+                  disabled={isLoading || isUserControlInProgress}
                   className="min-h-[48px] h-[48px] resize-none pl-12 py-3 flex items-center rounded-lg border-gray-300 dark:border-gray-700"
                   rows={1}
                 />
               </div>
               <Button 
                 type="submit" 
-                disabled={isLoading || isThinking || (!input.trim() && !currentUpload)} 
+                disabled={isLoading || isThinking || isUserControlInProgress || (!input.trim() && !currentUpload)} 
                 className="h-[48px] btn-hover bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 dark:from-blue-600 dark:to-blue-700 dark:hover:from-blue-700 dark:hover:to-blue-800 text-white px-5 rounded-lg shadow-md hover:shadow-lg transition-all duration-300"
               >
                 <Send className="h-4 w-4 mr-1" />

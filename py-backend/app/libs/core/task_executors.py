@@ -127,6 +127,16 @@ class NavigationExecutor(BaseTaskExecutor):
             result = await browser_manager.session.call_tool("navigate", {"url": url})
             response_data = browser_manager.parse_response(result.content[0].text)
             
+            # Update browser state through agent manager
+            from app.libs.core.browser_state_manager import BrowserStatus
+            await self.agent_manager.update_browser_state(
+                session_id=session_id,
+                status=BrowserStatus.NAVIGATING,
+                current_url=response_data.get("current_url", url),
+                page_title=response_data.get("page_title", ""),
+                has_screenshot=bool(response_data.get("screenshot"))
+            )
+            
             # Process screenshot if available
             screenshot = None
             if isinstance(response_data, dict) and "screenshot" in response_data:
@@ -238,6 +248,18 @@ class ActionExecutor(BaseTaskExecutor):
                 result = await browser_manager.session.call_tool("act", {"instruction": user_message})
                 response_data = browser_manager.parse_response(result.content[0].text)
                 
+                # Update browser state through agent manager
+                from app.libs.core.browser_state_manager import BrowserStatus
+                from app.libs.core.agent_manager import get_agent_manager
+                agent_manager = get_agent_manager()
+                await agent_manager.update_browser_state(
+                    session_id=session_id,
+                    status=BrowserStatus.INITIALIZED,  # Actions don't change URL, so keep as initialized
+                    current_url=response_data.get("current_url", ""),
+                    page_title=response_data.get("page_title", ""),
+                    has_screenshot=bool(response_data.get("screenshot"))
+                )
+                
                 # Process successful response
                 screenshot = None
                 if isinstance(response_data, dict) and "screenshot" in response_data:
@@ -315,7 +337,7 @@ class ActionExecutor(BaseTaskExecutor):
                     "error": str(act_error),
                     "message": error_message,
                     "answer": f"Error: {error_message}",
-                    "screenshot": screenshot
+                    "screenshot": None  # No screenshot available when import fails
                 }
                 
         except Exception as e:
@@ -605,6 +627,17 @@ class AgentOrchestrator(BaseTaskExecutor):
             
             # Execute agent with provided state
             result = await agent_executor.execute(mission, session_id=session_id, max_turns=MAX_AGENT_TURNS, **additional_params)
+            
+            # Update browser state after agent execution
+            from app.libs.core.browser_state_manager import get_browser_state_manager, BrowserStatus
+            state_manager = get_browser_state_manager()
+            await state_manager.update_browser_state(
+                session_id=session_id,
+                status=BrowserStatus.INITIALIZED,
+                current_url=result.get("current_url", ""),
+                page_title=result.get("page_title", ""),
+                has_screenshot=bool(result.get("screenshot"))
+            )
             
             # Process result
             answer = result.get("answer", "Task completed without specific answer")

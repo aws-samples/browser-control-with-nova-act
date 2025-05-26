@@ -303,10 +303,7 @@ export const useChat = (selectedModel: string, selectedRegion: string): UseChatR
         
         setMessages(prev => [...prev, message]);
         resetThinkingTimer(setIsThinking, thinkingStartTime);
-      } else {
-        logger.info('Received processing response, waiting for SSE stream', { sessionId: responseSessionId });
-      }
-    
+      }     
       return { analyzeTime: 0 };
     },
     
