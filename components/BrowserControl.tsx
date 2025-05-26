@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Button } from "@/components/ui/button";
 import { 
   DropdownMenu, 
@@ -11,63 +11,40 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { 
   Globe, 
-  Power, 
   Hand, 
   Square,
   Settings,
-  ChevronUp
+  ChevronUp,
+  X
 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
+import { useBrowserControl } from "@/hooks/useBrowserControl";
 
 interface BrowserControlProps {
   sessionId?: string;
   isThinking?: boolean;
-  onTerminateSession?: () => Promise<void>;
   onStopAgent?: () => void;
   onTakeControl?: () => void;
+  onUserControlStatusChange?: (isInProgress: boolean) => void;
 }
 
 function BrowserControl({ 
   sessionId, 
   isThinking = false, 
-  onTerminateSession,
   onStopAgent,
-  onTakeControl 
+  onTakeControl,
+  onUserControlStatusChange 
 }: BrowserControlProps) {
   const [isOpen, setIsOpen] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
+  const browserControl = useBrowserControl(sessionId);
 
-  const handleTerminateSession = async () => {
-    if (!sessionId) {
-      toast({
-        title: "No active session",
-        description: "There's no browser session to terminate.",
-        variant: "destructive"
-      });
-      return;
+  // Notify parent component about user control status changes
+  useEffect(() => {
+    if (onUserControlStatusChange) {
+      onUserControlStatusChange(browserControl.isUserControlInProgress);
     }
+  }, [browserControl.isUserControlInProgress, onUserControlStatusChange]);
 
-    try {
-      setIsLoading(true);
-      if (onTerminateSession) {
-        await onTerminateSession();
-      }
-      
-      toast({
-        title: "Session terminated",
-        description: "Browser session has been successfully terminated.",
-      });
-      setIsOpen(false);
-    } catch (error) {
-      toast({
-        title: "Error",
-        description: "Failed to terminate browser session.",
-        variant: "destructive"
-      });
-    } finally {
-      setIsLoading(false);
-    }
-  };
 
   const handleStopAgent = () => {
     if (onStopAgent) {
@@ -80,22 +57,60 @@ function BrowserControl({
     setIsOpen(false);
   };
 
-  const handleTakeControl = () => {
-    if (onTakeControl) {
-      onTakeControl();
+  const handleTakeControl = async () => {
+    try {
+      await browserControl.actions.takeControl();
+      if (onTakeControl) {
+        onTakeControl();
+      }
+      // Refresh status after control change
+      await browserControl.actions.refreshStatus();
+      setIsOpen(false);
+    } catch (error) {
+      console.error('Take control failed:', error);
     }
-    toast({
-      title: "Control taken",
-      description: "You now have manual control over the browser.",
-    });
-    setIsOpen(false);
   };
 
-  const hasActiveSession = Boolean(sessionId);
+  const handleReleaseControl = async () => {
+    try {
+      await browserControl.actions.releaseControl();
+      // The toast is already handled in the hook
+      // Refresh status after control change
+      await browserControl.actions.refreshStatus();
+      setIsOpen(false);
+    } catch (error) {
+      console.error('Release control failed:', error);
+      toast({
+        title: "Error",
+        description: "Failed to release control.",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const handleCloseBrowser = async () => {
+    try {
+      await browserControl.actions.closeBrowser();
+      setIsOpen(false);
+    } catch (error) {
+      console.error('Browser close failed:', error);
+    }
+  };
+
+
+  const hasActiveSession = browserControl.hasActiveSession;
+
+  const handleDropdownOpenChange = async (open: boolean) => {
+    if (open && sessionId) {
+      // Refresh browser status when dropdown opens
+      await browserControl.actions.refreshStatus();
+    }
+    setIsOpen(open);
+  };
 
   return (
     <div className="fixed bottom-4 right-4 z-50">
-      <DropdownMenu open={isOpen} onOpenChange={setIsOpen}>
+      <DropdownMenu open={isOpen} onOpenChange={handleDropdownOpenChange}>
         <DropdownMenuTrigger asChild>
           <Button
             variant="outline"
@@ -119,14 +134,31 @@ function BrowserControl({
           
           <DropdownMenuSeparator />
           
-          <DropdownMenuItem 
-            onClick={handleTakeControl}
-            disabled={!hasActiveSession}
-            className="cursor-pointer"
-          >
-            <Hand className="h-4 w-4 mr-2" />
-            Take Control
-          </DropdownMenuItem>
+          {browserControl.browserState?.is_headless ? (
+            <DropdownMenuItem 
+              onClick={handleTakeControl}
+              disabled={!hasActiveSession}
+              className="cursor-pointer"
+            >
+              <Hand className="h-4 w-4 mr-2" />
+              Take Control
+              <span className="ml-auto text-xs text-muted-foreground">
+                Show Browser
+              </span>
+            </DropdownMenuItem>
+          ) : (
+            <DropdownMenuItem 
+              onClick={handleReleaseControl}
+              disabled={!hasActiveSession}
+              className="cursor-pointer"
+            >
+              <Hand className="h-4 w-4 mr-2" />
+              Release Control
+              <span className="ml-auto text-xs text-muted-foreground">
+                Hide Browser
+              </span>
+            </DropdownMenuItem>
+          )}
           
           <DropdownMenuItem 
             onClick={handleStopAgent}
@@ -145,18 +177,14 @@ function BrowserControl({
           <DropdownMenuSeparator />
           
           <DropdownMenuItem 
-            onClick={handleTerminateSession}
-            disabled={!hasActiveSession || isLoading}
-            className="cursor-pointer text-destructive focus:text-destructive"
+            onClick={handleCloseBrowser}
+            disabled={!hasActiveSession || browserControl.isLoading}
+            className="cursor-pointer"
           >
-            <Power className="h-4 w-4 mr-2" />
-            {isLoading ? "Terminating..." : "Terminate Session"}
-            {hasActiveSession && (
-              <span className="ml-auto text-xs bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200 px-1.5 py-0.5 rounded">
-                Active
-              </span>
-            )}
+            <X className="h-4 w-4 mr-2" />
+            Close Browser
           </DropdownMenuItem>
+          
           
           {!hasActiveSession && (
             <div className="px-2 py-1.5 text-xs text-muted-foreground">

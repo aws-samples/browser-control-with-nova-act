@@ -12,6 +12,7 @@ export default function AIChat() {
   const [selectedModel, setSelectedModel] = useState(
     "us.anthropic.claude-3-7-sonnet-20250219-v1:0"
   );
+  const [isUserControlInProgress, setIsUserControlInProgress] = useState(false);
   const {
     messages,
     input,
@@ -48,7 +49,8 @@ export default function AIChat() {
           selectedRegion={selectedRegion}
           models={models}
           regions={regions}
-          isThinking={isThinking}
+          isThinking={isThinking || isUserControlInProgress}
+          isUserControlInProgress={isUserControlInProgress}
           fileInputRef={fileInputRef}
           onInputChange={actions.handleInputChange}
           onKeyDown={actions.handleKeyDown}
@@ -72,9 +74,9 @@ export default function AIChat() {
       <BrowserControl
         sessionId={sessionId}
         isThinking={isThinking}
-        onTerminateSession={actions.terminateSession}
         onStopAgent={actions.stopAgent}
         onTakeControl={actions.takeControl}
+        onUserControlStatusChange={setIsUserControlInProgress}
       />
     </div>
   );

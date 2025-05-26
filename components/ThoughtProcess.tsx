@@ -95,6 +95,11 @@ const ThoughtProcess: React.FC<ThoughtProcessProps> = React.memo(({
       border: "border-emerald-200 dark:border-emerald-800",
       icon: <CheckCircle className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
     },
+    "User Control": { 
+      bg: "bg-indigo-50/40 dark:bg-indigo-900/20", 
+      border: "border-indigo-200 dark:border-indigo-800",
+      icon: <User className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
+    },
     "default": { 
       bg: "bg-secondary/30 dark:bg-gray-800/60", 
       border: "border-secondary/50 dark:border-gray-700",
@@ -147,6 +152,11 @@ const ThoughtProcess: React.FC<ThoughtProcessProps> = React.memo(({
                 nodeName = 'Answer';
               }
 
+              // User Control 카테고리는 별도 노드로 표시
+              if (thought.category === 'user_control') {
+                nodeName = 'User Control';
+              }
+
               const nodeStyle = nodeColorMap[nodeName] || nodeColorMap.default;
               
               const categoryStyle = thought.category === 'error' ? 
@@ -159,12 +169,27 @@ const ThoughtProcess: React.FC<ThoughtProcessProps> = React.memo(({
               
               const isAnswerNode = nodeName === 'Answer';
               const isVisualizationNode = nodeName === 'Visualization' && thought.category === 'visualization_data';
-              const showSeparatorAfter = (isAnswerNode || isVisualizationNode) && 
+              const isUserControlNode = nodeName === 'User Control' && thought.category === 'user_control';
+              
+              // Show separator after User Control completion (success or failure) 
+              const isUserControlComplete = isUserControlNode && 
+                (thought.content.includes('✅') || thought.content.includes('❌'));
+              
+              // Show separator BEFORE User Control starts (when previous node is not User Control)
+              const isUserControlStart = isUserControlNode && 
+                thought.content.includes('Starting') && 
+                index > 0 && 
+                thoughts[index - 1].category !== 'user_control';
+              
+              const showSeparatorBefore = isUserControlStart;
+              const showSeparatorAfter = (isAnswerNode || isVisualizationNode || isUserControlComplete) && 
                 index < thoughts.length - 1 && 
                 thoughts[index + 1].node !== 'Answer' && 
                 thoughts[index + 1].node !== 'Visualization' && 
+                thoughts[index + 1].node !== 'User Control' &&
                 thoughts[index + 1].category !== 'result' && 
-                thoughts[index + 1].category !== 'visualization_data';
+                thoughts[index + 1].category !== 'visualization_data' &&
+                thoughts[index + 1].category !== 'user_control';
               
               // Modified content to remove URL prefix if there's a screenshot
               let displayContent = thought.content;
@@ -175,6 +200,16 @@ const ThoughtProcess: React.FC<ThoughtProcessProps> = React.memo(({
               
               return (
                 <React.Fragment key={index}>
+                  {/* Show separator BEFORE User Control starts */}
+                  {showSeparatorBefore && (
+                    <div className="my-6 py-2 px-3 bg-gradient-to-r from-indigo-50/50 to-transparent dark:from-indigo-900/30 dark:to-transparent rounded-md flex items-center gap-2 animate-fade-in-up hover:from-indigo-100 hover:to-transparent dark:hover:from-indigo-800/30 transition-all duration-300">
+                      <div className="p-1.5 rounded-full bg-indigo-50 dark:bg-indigo-900/50 animate-pulse-glow">
+                        <RefreshCw className="h-3.5 w-3.5 text-indigo-500 dark:text-indigo-400" />
+                      </div>
+                      <span className="text-sm font-medium text-indigo-600 dark:text-indigo-400">User Control</span>
+                    </div>
+                  )}
+
                   <Card 
                     className={`mb-4 p-3 border thought-node ${nodeStyle.bg} ${nodeStyle.border}`}
                   >
@@ -202,8 +237,12 @@ const ThoughtProcess: React.FC<ThoughtProcessProps> = React.memo(({
                             </span>
                           )}
                             {thought.category && thought.category !== 'user_input' && (
-                              <span className="text-xs px-2 py-0.5 rounded-full text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-800">
-                                {thought.category}
+                              <span className={`text-xs px-2 py-0.5 rounded-full ${
+                                thought.category === 'user_control' 
+                                  ? 'text-indigo-600 dark:text-indigo-400 bg-indigo-100 dark:bg-indigo-900' 
+                                  : 'text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-800'
+                              }`}>
+                                {thought.category === 'user_control' ? 'User Control' : thought.category}
                               </span>
                             )}
                           </div>

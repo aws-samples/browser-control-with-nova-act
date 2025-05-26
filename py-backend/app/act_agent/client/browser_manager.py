@@ -185,6 +185,9 @@ class BrowserManager:
                 except Exception as e:
                     print(f"Error closing exit stack: {e}")
             
+            # Terminate server process completely
+            self._terminate_server()
+            
             print(f"Browser manager closed for session {self.session_id}")
         except Exception as e:
             print(f"Error closing browser manager: {e}")
@@ -201,6 +204,19 @@ class BrowserManager:
         
         response_data = self.parse_response(result.content[0].text)
         self.initial_screenshot = None  # Will be captured when needed by agent
+        
+        # Update browser state with headless setting
+        try:
+            from app.libs.core.browser_state_manager import BrowserStateManager, BrowserStatus
+            state_manager = BrowserStateManager()
+            await state_manager.update_browser_state(
+                session_id=self.session_id,
+                status=BrowserStatus.INITIALIZED,
+                is_headless=headless,
+                current_url=effective_url
+            )
+        except Exception as e:
+            print(f"Warning: Failed to update browser state: {e}")
         
         print(f"Browser initialized: {self.format_output(response_data)}")
         self.browser_initialized = True
@@ -222,31 +238,59 @@ class BrowserManager:
         if not self.session:
             raise RuntimeError("Not connected to MCP server")
         
-        # If we need to preserve the current URL and no URL was specified
-        if preserve_url and url is None:
+        # Get current headless state if not specified
+        current_headless = headless
+        if current_headless is None:
             try:
-                if self.browser_initialized and self.session:
-                    # Get the current browser state
-                    state_result = await self.session.call_tool("take_screenshot", {})
-                    browser_state = self.parse_response(state_result.content[0].text)
-                    current_url = browser_state.get("current_url", "")
-                    
-                    if current_url and current_url != "about:blank":
-                        # Use current URL for restart
-                        url = current_url
-                        print(f"Will restart browser with current URL: {url}")
+                from app.libs.core.browser_state_manager import BrowserStateManager
+                state_manager = BrowserStateManager()
+                current_state = state_manager.get_browser_state(self.session_id)
+                if current_state:
+                    current_headless = current_state.is_headless
+                else:
+                    current_headless = False  # Default to non-headless if no state found
+            except Exception as e:
+                print(f"Error getting current headless state: {e}")
+                current_headless = False
+        
+        # If we need to preserve the current URL and no URL was specified
+        if preserve_url and url is None and self.browser_initialized:
+            try:
+                # Get the current browser state
+                state_result = await self.session.call_tool("take_screenshot", {})
+                browser_state = self.parse_response(state_result.content[0].text)
+                current_url = browser_state.get("current_url", "")
+                
+                if current_url and current_url != "about:blank":
+                    # Use current URL for restart
+                    url = current_url
+                    print(f"Will restart browser with current URL: {url}")
             except Exception as e:
                 print(f"Error getting current URL for restart: {e}")
                 # Continue with default URL
         
-        print(f"\nRestarting browser (headless: {headless}, url: {url}, preserve_url: {preserve_url})...")
+        print(f"\nRestarting browser (headless: {current_headless}, url: {url}, preserve_url: {preserve_url})...")
         try:
             result = await self.session.call_tool("restart_browser", {
-                "headless": headless,
+                "headless": current_headless,
                 "url": url
             })
             
             response_data = self.parse_response(result.content[0].text)
+            
+            # Update browser state with headless setting
+            try:
+                from app.libs.core.browser_state_manager import BrowserStateManager, BrowserStatus
+                state_manager = BrowserStateManager()
+                await state_manager.update_browser_state(
+                    session_id=self.session_id,
+                    status=BrowserStatus.INITIALIZED,
+                    is_headless=current_headless,
+                    current_url=url or ""
+                )
+            except Exception as e:
+                print(f"Warning: Failed to update browser state: {e}")
+                
             print(f"Browser restarted: {self.format_output(response_data)}")
             
             self.browser_initialized = True

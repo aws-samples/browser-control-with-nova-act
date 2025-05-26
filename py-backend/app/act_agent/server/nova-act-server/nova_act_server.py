@@ -297,7 +297,7 @@ async def initialize_browser(headless: bool = False, url: str = None) -> Dict[st
             logger.info(f"Browser status: {format_log_response(response)}")
             return response
         
-        success, screenshot_data = await asyncio.to_thread(
+        success, screenshot_data, error_msg = await asyncio.to_thread(
             browser.initialize_browser,
             headless=headless,
             starting_url=url
@@ -306,7 +306,7 @@ async def initialize_browser(headless: bool = False, url: str = None) -> Dict[st
         if not success:
             return {
                 "status": "error",
-                "message": "Failed to initialize browser"
+                "message": f"Failed to initialize browser: {error_msg or 'Unknown error'}"
             }
         
         current_url = await asyncio.to_thread(browser.get_current_url)
@@ -352,6 +352,7 @@ async def close_browser() -> Dict[str, Any]:
     except Exception as e:
         return create_error_response(e, "close browser")
 
+
 @mcp.tool()
 async def restart_browser(headless: bool = False, url: str = None):
     """Tool to restart the browser.
@@ -374,6 +375,7 @@ async def restart_browser(headless: bool = False, url: str = None):
             "status": "error",
             "message": f"Failed to restart browser: {str(e)}"
         }
+
 
 
 @mcp.tool()

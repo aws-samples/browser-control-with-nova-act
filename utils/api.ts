@@ -6,6 +6,6 @@ export const API_BASE_URL = 'http://localhost:8000/api';
 
 export async function apiRequest(path: string, options = {}) {
   const url = `${API_BASE_URL}${path.startsWith('/') ? path : `/${path}`}`;
-  logger.debug('Making API request', { url, options });
-  return fetch(url, options);
+  const response = await fetch(url, options);
+  return response;
 }
