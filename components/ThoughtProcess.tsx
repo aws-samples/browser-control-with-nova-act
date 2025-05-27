@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge"; // 올바른 Badge 컴포넌트 import
+import { Badge } from "@/components/ui/badge";
 import { ChartColumnBig, Brain, Wrench, BarChart, Settings, CheckCircle, User, RefreshCw, Globe, Cog, Clock, Zap } from "lucide-react";
 import type { AnalyzeAPIResponse } from '@/types/chat';
 import useThoughtProcess from '@/hooks/useThoughtProcess';
@@ -152,7 +152,7 @@ const ThoughtProcess: React.FC<ThoughtProcessProps> = React.memo(({
                 nodeName = 'Answer';
               }
 
-              // User Control 카테고리는 별도 노드로 표시
+              // User Control category is displayed as a separate node
               if (thought.category === 'user_control') {
                 nodeName = 'User Control';
               }

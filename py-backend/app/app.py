@@ -1,6 +1,6 @@
 from fastapi import FastAPI, Request, BackgroundTasks, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from app.api_routes import thought_stream, router, mcp_servers, browser_control
+from app.api_routes import thought_stream, router, mcp_servers, browser_control, agent_control
 from app.libs.utils.utils import PathManager, setup_paths, register_session_and_thought_handler
 from app.libs.utils.thought_stream import thought_handler
 from app.libs.config.config import BROWSER_HEADLESS, BROWSER_USER_DATA_DIR
@@ -41,6 +41,7 @@ app.include_router(thought_stream.router, prefix="/api/assistant", tags=["Though
 app.include_router(router.router, prefix="/api/router", tags=["Router"])
 app.include_router(browser_control.router, prefix="/api/browser", tags=["Browser Control"])
 app.include_router(mcp_servers.router, prefix="/api/mcp-servers", tags=["MCP Servers"])
+app.include_router(agent_control.router, prefix="/api", tags=["Agent Control"])
 
 app.add_middleware(
     CORSMiddleware,

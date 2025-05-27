@@ -72,20 +72,6 @@ class AgentExecutor:
             # Create message and prepare tools
             messages = [{"role": "user", "content": message_content}]
             
-            # LOG: Agent 초기 메시지 형태 확인
-            logger.info(f"=== AGENT 초기 메시지 구조 ===")
-            logger.info(f"Initial message content items: {len(message_content)}")
-            for i, item in enumerate(message_content):
-                if isinstance(item, dict):
-                    if 'text' in item:
-                        text = item['text'][:100] + '...' if len(item['text']) > 100 else item['text']
-                        logger.info(f"  Item {i}: TEXT - {text}")
-                    elif 'image' in item:
-                        img_format = item['image'].get('format', 'unknown')
-                        img_size = len(str(item['image'])) if item['image'] else 0
-                        logger.info(f"  Item {i}: IMAGE - format={img_format}, size={img_size} chars")
-            logger.info("=== END AGENT 초기 메시지 ===")
-            
             response = await self.browser_manager.session.list_tools()
             available_tools = [{
                 "name": tool.name,
