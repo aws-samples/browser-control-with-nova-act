@@ -46,16 +46,28 @@ class TaskClassifier:
             logger.error(f"Error in extract_json_from_text: {str(e)}")
             return None
 
-
     async def classify(self, user_message: str, session_id: str, conversation_history: List[Dict[str, Any]] = None) -> Dict[str, Any]:
-        """Classify a user message into an appropriate task type."""
+        """Classify a user message into an appropriate task type.
+        
+        Args:
+            user_message: The current user message to classify
+            session_id: The session identifier
+            conversation_history: Optional conversation history for context
+            
+        Returns:
+            Classification result with type and other relevant information
+        """
         try:            
-            # Prepare messages once - no double filtering
-            if conversation_history:
-                from app.libs.data.conversation_manager import prepare_messages_for_bedrock
-                filtered_messages = prepare_messages_for_bedrock(conversation_history)
-            else:
-                filtered_messages = [{"role": "user", "content": [{"text": user_message}]}]
+            # Get browser context if available
+            browser_context = await self._get_browser_context(session_id)
+            
+            # Prepare messages with browser context
+            filtered_messages = self._prepare_messages_with_context(
+                user_message, conversation_history, browser_context
+            )
+            
+            # Clean up images from conversation history (preserve current browser screenshot)
+            self._cleanup_conversation_images(filtered_messages)
 
             # Call model
             response = self.bedrock.converse(
@@ -134,6 +146,142 @@ class TaskClassifier:
                 "user_message": user_message
             }
 
+    def _prepare_messages_with_context(self, user_message: str, conversation_history: List[Dict[str, Any]], browser_context: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Prepare messages with browser context enhancement."""
+        if conversation_history:
+            from app.libs.data.conversation_manager import prepare_messages_for_bedrock
+            filtered_messages = prepare_messages_for_bedrock(conversation_history)
+            
+            # Enhance the last user message with browser context if available
+            if browser_context["has_browser"] and filtered_messages:
+                self._enhance_last_user_message(filtered_messages, user_message, browser_context)
+            else:
+                # Add current user message if not already present
+                self._add_current_user_message_if_needed(filtered_messages, user_message)
+        else:
+            # No conversation history - create user message with browser context if available
+            filtered_messages = self._create_user_message_with_context(user_message, browser_context)
+            
+        return filtered_messages
+    
+    def _enhance_last_user_message(self, messages: List[Dict[str, Any]], user_message: str, browser_context: Dict[str, Any]) -> None:
+        """Enhance the last user message with browser context."""
+        for i in range(len(messages) - 1, -1, -1):
+            if messages[i]["role"] == "user":
+                # Get original text from the last user message  
+                original_text = user_message
+                if messages[i]["content"] and isinstance(messages[i]["content"], list):
+                    for content_item in messages[i]["content"]:
+                        if isinstance(content_item, dict) and "text" in content_item:
+                            original_text = content_item["text"]
+                            break
+                
+                # Create enhanced content with browser context
+                context_text = f"Current browser context:\n- URL: {browser_context['current_url']}\n- Page: {browser_context['page_title']}\n\nUser request: {original_text}"
+                enhanced_content = [{"text": context_text}]
+                
+                # Add screenshot if available
+                if browser_context.get("screenshot_bytes"):
+                    enhanced_content.append({
+                        "image": {
+                            "format": browser_context.get("screenshot_format", "jpeg"),
+                            "source": {"bytes": browser_context["screenshot_bytes"]}
+                        }
+                    })
+                
+                # Replace the content of the last user message
+                messages[i]["content"] = enhanced_content
+                break
+    
+    def _add_current_user_message_if_needed(self, messages: List[Dict[str, Any]], user_message: str) -> None:
+        """Add current user message if not already present."""
+        if not messages or messages[-1]["role"] != "user" or \
+           (messages[-1]["content"] and messages[-1]["content"][0].get("text") != user_message):
+            messages.append({
+                "role": "user",
+                "content": [{"text": user_message}]
+            })
+    
+    def _create_user_message_with_context(self, user_message: str, browser_context: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Create user message with browser context if available."""
+        if browser_context["has_browser"]:
+            # Create enhanced content with browser context
+            context_text = f"Current browser context:\n- URL: {browser_context['current_url']}\n- Page: {browser_context['page_title']}\n\nUser request: {user_message}"
+            enhanced_content = [{"text": context_text}]
+            
+            # Add screenshot if available
+            if browser_context.get("screenshot_bytes"):
+                enhanced_content.append({
+                    "image": {
+                        "format": browser_context.get("screenshot_format", "jpeg"),
+                        "source": {"bytes": browser_context["screenshot_bytes"]}
+                    }
+                })
+            
+            return [{"role": "user", "content": enhanced_content}]
+        else:
+            # Simple user message without browser context
+            return [{"role": "user", "content": [{"text": user_message}]}]
+    
+    def _cleanup_conversation_images(self, messages: List[Dict[str, Any]]) -> None:
+        """Remove images from conversation history but preserve current browser screenshot."""
+        for i, message in enumerate(messages):
+            if "content" in message and isinstance(message["content"], list):
+                # Clean up tool result images
+                for content_item in message["content"]:
+                    if isinstance(content_item, dict) and "toolResult" in content_item:
+                        tool_result = content_item["toolResult"]
+                        if "content" in tool_result and isinstance(tool_result["content"], list):
+                            tool_result["content"] = [
+                                item for item in tool_result["content"]
+                                if isinstance(item, dict) and "image" not in item
+                            ]
+                            # Add placeholder if tool result becomes empty
+                            if not tool_result["content"]:
+                                tool_result["content"] = [{"text": "Screenshot processed"}]
+                
+                # Remove message-level images, except for the last user message (current context)
+                is_last_user_message = (i == len(messages) - 1 and message["role"] == "user")
+                if not is_last_user_message:
+                    message["content"] = [
+                        content_item for content_item in message["content"]
+                        if not (isinstance(content_item, dict) and "image" in content_item)
+                    ]
+    
+    async def _get_browser_context(self, session_id: str) -> Dict[str, Any]:
+        """Get browser context including screenshot if browser is initialized."""
+        context = {"has_browser": False}
+        
+        try:
+            # Use BaseTaskExecutor to get browser state
+            from app.libs.core.task_executors import BaseTaskExecutor
+            base_executor = BaseTaskExecutor(self.model_id, self.region)
+            browser_state = await base_executor.get_browser_state(session_id)
+            
+            if browser_state and browser_state.get("browser_initialized"):
+                context.update({
+                    "has_browser": True,
+                    "current_url": browser_state.get("current_url", ""),
+                    "page_title": browser_state.get("page_title", "")
+                })
+                
+                # Process screenshot if available
+                screenshot_data = browser_state.get("screenshot")
+                if screenshot_data and isinstance(screenshot_data, dict) and "data" in screenshot_data:
+                    try:
+                        import base64
+                        screenshot_bytes = base64.b64decode(screenshot_data["data"])
+                        context.update({
+                            "screenshot_bytes": screenshot_bytes,
+                            "screenshot_format": screenshot_data.get("format", "jpeg")
+                        })
+                    except Exception as e:
+                        logger.warning(f"Failed to process screenshot for classification: {e}")
+        
+        except Exception as e:
+            logger.debug(f"Could not get browser context: {e}")
+            
+        return context
 
     def update_model(self, model_id: Optional[str] = None, region: Optional[str] = None):
         """Update the model ID and/or region for classification."""

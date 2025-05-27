@@ -6,7 +6,7 @@ import logging
 from app.libs.data.session_manager import get_session_manager
 
 logger = logging.getLogger("browser_control_api")
-logger.setLevel(logging.WARNING)
+logger.setLevel(logging.DEBUG)
 router = APIRouter()
 
 @router.get("/session/{session_id}/browser-status")
