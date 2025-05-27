@@ -179,7 +179,7 @@ async def act(instruction: str, max_steps: Optional[int] = 3) -> Dict[str, Any]:
         return create_error_response(e, f"perform action: {instruction}")
 
 @mcp.tool()
-async def extract_data(
+async def extract(
     description: str,
     schema_type: str = "custom",
     custom_schema: Optional[Dict[str, Any]] = None

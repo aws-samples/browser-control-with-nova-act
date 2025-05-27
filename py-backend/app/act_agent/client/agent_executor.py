@@ -289,7 +289,7 @@ class AgentExecutor:
             return f"Instructing browser: \"{tool_args['instruction']}\""
         elif tool_name == "navigate" and "url" in tool_args:
             return f"Navigating to: {tool_args['url']}"
-        elif tool_name == "extract_data" and "description" in tool_args:
+        elif tool_name == "extract" and "description" in tool_args:
             return f"Extracting data: {tool_args['description']}"
         else:
             return f"Calling tool: {tool_name}"

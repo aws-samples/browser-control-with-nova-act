@@ -129,26 +129,26 @@ function BrowserControl({
   };
 
   return (
-    <div className="fixed bottom-4 right-4 z-50">
+    <div className="fixed bottom-6 right-6 z-50">
       <DropdownMenu open={isOpen} onOpenChange={handleDropdownOpenChange}>
         <DropdownMenuTrigger asChild>
           <Button
             variant="outline"
-            size="sm"
-            className="bg-background/80 backdrop-blur-sm border-border/50 hover:bg-accent/80 transition-all duration-200 shadow-lg"
+            size="lg"
+            className="bg-gradient-to-r from-blue-500/10 to-purple-500/10 backdrop-blur-md border-blue-200/30 dark:border-blue-700/30 hover:from-blue-500/20 hover:to-purple-500/20 hover:border-blue-300/50 dark:hover:border-blue-600/50 transition-all duration-300 shadow-xl shadow-blue-500/10 dark:shadow-blue-400/5 px-6 py-3 text-base font-medium"
           >
-            <Globe className="h-4 w-4 mr-2" />
-            Browser
-            <ChevronUp className={`h-3 w-3 ml-2 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
+            <Globe className="h-5 w-5 mr-3 text-blue-600 dark:text-blue-400" />
+            <span className="text-foreground/90">Browser Control</span>
+            <ChevronUp className={`h-4 w-4 ml-3 transition-transform duration-300 text-blue-600 dark:text-blue-400 ${isOpen ? 'rotate-180' : ''}`} />
           </Button>
         </DropdownMenuTrigger>
         
         <DropdownMenuContent 
           align="end" 
-          className="w-56 bg-background/95 backdrop-blur-sm border-border/50"
-          sideOffset={8}
+          className="w-64 bg-background/95 backdrop-blur-md border-blue-200/30 dark:border-blue-700/30 shadow-xl shadow-blue-500/10 dark:shadow-blue-400/5 rounded-xl"
+          sideOffset={12}
         >
-          <div className="px-2 py-1.5 text-sm font-medium text-muted-foreground">
+          <div className="px-4 py-3 text-sm font-semibold text-blue-700 dark:text-blue-300 bg-blue-50/50 dark:bg-blue-950/50 rounded-t-xl">
             Browser Controls
           </div>
           
@@ -157,52 +157,57 @@ function BrowserControl({
           {isThinking ? (
             <DropdownMenuItem 
               disabled={true}
-              className="cursor-not-allowed opacity-50"
+              className="cursor-not-allowed opacity-50 px-4 py-3 text-base"
             >
-              <Hand className="h-4 w-4 mr-2" />
-              Browser Control
-              <span className="ml-auto text-xs text-muted-foreground">
-                Processing...
-              </span>
+              <Hand className="h-5 w-5 mr-3 text-gray-400" />
+              <div className="flex-1">
+                <div className="font-medium">Browser Control</div>
+                <div className="text-sm text-muted-foreground">Processing...</div>
+              </div>
             </DropdownMenuItem>
           ) : browserControl.browserState?.is_headless ? (
             <DropdownMenuItem 
               onClick={handleTakeControl}
               disabled={!hasActiveSession}
-              className="cursor-pointer"
+              className="cursor-pointer px-4 py-3 text-base hover:bg-green-50 dark:hover:bg-green-950/30"
             >
-              <Hand className="h-4 w-4 mr-2" />
-              Take Control
-              <span className="ml-auto text-xs text-muted-foreground">
-                Show Browser
-              </span>
+              <Hand className="h-5 w-5 mr-3 text-green-600 dark:text-green-400" />
+              <div className="flex-1">
+                <div className="font-medium">Take Control</div>
+                <div className="text-sm text-muted-foreground">Show Browser</div>
+              </div>
             </DropdownMenuItem>
           ) : (
             <DropdownMenuItem 
               onClick={handleReleaseControl}
               disabled={!hasActiveSession}
-              className="cursor-pointer"
+              className="cursor-pointer px-4 py-3 text-base hover:bg-orange-50 dark:hover:bg-orange-950/30"
             >
-              <Hand className="h-4 w-4 mr-2" />
-              Release Control
-              <span className="ml-auto text-xs text-muted-foreground">
-                Hide Browser
-              </span>
+              <Hand className="h-5 w-5 mr-3 text-orange-600 dark:text-orange-400" />
+              <div className="flex-1">
+                <div className="font-medium">Release Control</div>
+                <div className="text-sm text-muted-foreground">Hide Browser</div>
+              </div>
             </DropdownMenuItem>
           )}
           
           <DropdownMenuItem 
             onClick={handleStopAgent}
             disabled={!isThinking || !agentControl.canStopAgent}
-            className="cursor-pointer"
+            className="cursor-pointer px-4 py-3 text-base hover:bg-red-50 dark:hover:bg-red-950/30"
           >
-            <Square className="h-4 w-4 mr-2" />
-            Stop Agent
-            {isThinking && agentControl.canStopAgent && (
-              <span className="ml-auto text-xs bg-orange-100 dark:bg-orange-900 text-orange-800 dark:text-orange-200 px-1.5 py-0.5 rounded">
-                Active
-              </span>
-            )}
+            <Square className="h-5 w-5 mr-3 text-red-600 dark:text-red-400" />
+            <div className="flex-1">
+              <div className="font-medium flex items-center gap-2">
+                Stop Agent
+                {isThinking && agentControl.canStopAgent && (
+                  <span className="text-xs bg-red-100 dark:bg-red-900 text-red-800 dark:text-red-200 px-2 py-1 rounded-full font-semibold">
+                    Active
+                  </span>
+                )}
+              </div>
+              <div className="text-sm text-muted-foreground">Stop current task</div>
+            </div>
           </DropdownMenuItem>
           
           <DropdownMenuSeparator />
@@ -210,16 +215,22 @@ function BrowserControl({
           <DropdownMenuItem 
             onClick={handleCloseBrowser}
             disabled={isThinking || !hasActiveSession || browserControl.isLoading}
-            className="cursor-pointer"
+            className="cursor-pointer px-4 py-3 text-base hover:bg-gray-50 dark:hover:bg-gray-950/30"
           >
-            <X className="h-4 w-4 mr-2" />
-            {isThinking ? "Processing..." : "Close Browser"}
+            <X className="h-5 w-5 mr-3 text-gray-600 dark:text-gray-400" />
+            <div className="flex-1">
+              <div className="font-medium">{isThinking ? "Processing..." : "Close Browser"}</div>
+              <div className="text-sm text-muted-foreground">End browser session</div>
+            </div>
           </DropdownMenuItem>
           
           
           {!hasActiveSession && (
-            <div className="px-2 py-1.5 text-xs text-muted-foreground">
-              No active browser session
+            <div className="px-4 py-3 text-sm text-muted-foreground bg-gray-50/50 dark:bg-gray-950/50 rounded-b-xl">
+              <div className="flex items-center gap-2">
+                <div className="w-2 h-2 bg-gray-400 rounded-full"></div>
+                No active browser session
+              </div>
             </div>
           )}
         </DropdownMenuContent>

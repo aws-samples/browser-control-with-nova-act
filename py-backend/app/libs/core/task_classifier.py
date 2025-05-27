@@ -68,7 +68,6 @@ class TaskClassifier:
             
             # Clean up images from conversation history (preserve current browser screenshot)
             self._cleanup_conversation_images(filtered_messages)
-
             # Call model
             response = self.bedrock.converse(
                 modelId=self.model_id,
@@ -99,7 +98,7 @@ class TaskClassifier:
                         tool_info = item['toolUse']
                         tool_name = tool_info['name']
                         
-                        if tool_name == "classify_request":
+                        if tool_name == "classifyRequest":
                             tool_input = tool_info.get('input', {})
                             classification_type = tool_input.get('type')
                             
@@ -138,7 +137,6 @@ class TaskClassifier:
                 
         except Exception as e:
             logger.error(f"Error during task classification: {e}")
-            logger.error(traceback.format_exc())
             
             return {
                 "type": "conversation",

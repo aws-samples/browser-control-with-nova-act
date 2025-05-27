@@ -37,14 +37,6 @@ class BrowserController:
         try:
             url = starting_url or DEFAULT_BROWSER_SETTINGS.get("start_url", "https://www.google.com")
             url = self.normalize_url(url)
-            browser_config = {
-                "starting_page": url,
-                "nova_act_api_key": self.api_key,
-                "headless": headless,                
-                "quiet": DEFAULT_BROWSER_SETTINGS.get("quiet", False),
-                "logs_directory": DEFAULT_BROWSER_SETTINGS.get("logs_directory"),
-                "record_video": DEFAULT_BROWSER_SETTINGS.get("record_video", False),
-            }
             
             self.nova = NovaAct(
                 starting_page=url,
@@ -60,7 +52,6 @@ class BrowserController:
             )
             
             self.nova.start()
-            # Use more practical loading states - domcontentloaded is more reliable
             try:
                 # First wait for DOM to be ready (faster and more reliable)
                 self.nova.page.wait_for_load_state("domcontentloaded", timeout=10000)

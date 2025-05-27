@@ -431,9 +431,9 @@ class AgentOrchestrator(BaseTaskExecutor):
                             tool_name = tool_info['name']
                             tool_input = tool_info['input']
                             
-                            if tool_name == 'agent_executor':
+                            if tool_name == 'agentExecutor':
                                 # Create tool request message using Message class
-                                tool_request = Message.tool_request(tool_use_id, "agent_executor", tool_input)
+                                tool_request = Message.tool_request(tool_use_id, "agentExecutor", tool_input)
                                 # Add tool request directly to conversation store
                                 conversation_messages.append(tool_request.to_dict())
                                 await task_supervisor.conversation_store.save(session_id, conversation_messages)

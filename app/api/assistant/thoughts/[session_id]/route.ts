@@ -12,8 +12,13 @@ async function connectWithRetry(backendUrl: string, maxAttempts = 5) {
       
       if (response.ok) return response;
       
+      console.log(`Connection attempt ${attempt + 1}/${maxAttempts} failed with status: ${response.status} ${response.statusText}`);
+      
     } catch (error) {
-      console.log(`Connection attempt ${attempt + 1}/${maxAttempts} failed, retrying...`);
+      console.log(`Connection attempt ${attempt + 1}/${maxAttempts} failed with error:`, error);
+    }
+    
+    if (attempt < maxAttempts - 1) {
       await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, attempt)));
     }
   }
@@ -66,7 +71,8 @@ export async function GET(
         }
 
         try {
-          const backendUrl = `http://localhost:8000/api/assistant/thoughts/${session_id}`;
+          const apiBaseUrl = process.env.API_BASE_URL || 'http://127.0.0.1:8000';
+          const backendUrl = `${apiBaseUrl}/api/assistant/thoughts/${session_id}`;
           console.log(`Attempting backend connection: ${backendUrl}`);
           
           const response = await connectWithRetry(backendUrl);

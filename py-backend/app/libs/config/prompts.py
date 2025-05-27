@@ -87,7 +87,7 @@ ROUTER_TOOL = {
     'tools': [
         {
             'toolSpec': {
-                'name': 'classify_request',
+                'name': 'classifyRequest',
                 'description': 'Classify user request into appropriate execution type',
                 'inputSchema': {
                     'json': {
@@ -159,7 +159,7 @@ SUPERVISOR_TOOL = {
     'tools': [
         {
             'toolSpec': {
-                'name': 'agent_executor',
+                'name': 'agentExecutor',
                 'description': 'Execute web browsing tasks to fulfill user requests efficiently. Handle user requests directly or break complex requests into sequential steps with specific goals.',
                 'inputSchema': {
                     'json': {
