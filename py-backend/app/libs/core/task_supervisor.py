@@ -3,13 +3,12 @@ import asyncio
 import traceback
 import time
 from typing import Dict, Any, Optional
-from datetime import datetime
 
 from app.libs.config.prompts import DEFAULT_MODEL_ID
 from app.libs.utils.decorators import log_thought
 from app.libs.core.task_classifier import TaskClassifier
 from app.libs.core.task_executors import NavigationExecutor, ActionExecutor, AgentOrchestrator
-from app.libs.data.conversation_store import ConversationStore, MemoryConversationStore, FileConversationStore
+from app.libs.data.conversation_store import ConversationStore, MemoryConversationStore
 from app.libs.data.conversation_manager import ConversationManager
 from app.libs.core.agent_manager import AgentManager
 
@@ -45,24 +44,6 @@ class TaskSupervisor:
         
         # Initialize conversation manager
         self.conversation_manager = ConversationManager(self.conversation_store)
-    
-    # async def classify_task(self, user_message: str, session_id: str) -> Dict[str, Any]:
-    #     """Classify a user message into an appropriate task type."""
-        
-    #     # Get the current conversation history to provide context for classification
-    #     messages = await self.conversation_manager.get_conversation_history(session_id)
-    #     classification = await self.task_classifier.classify(user_message, session_id, messages)
-        
-    #     # If not agent type, add a classification message to conversation
-    #     if classification.get('type') != "agent":
-    #         classification_message = f"I'll handle this as a {classification.get('type', 'unknown')} task."
-    #         await self.conversation_manager.add_assistant_message(
-    #             session_id=session_id, 
-    #             content=classification_message, 
-    #             source="classification"
-    #         )
-        
-    #     return classification
     
     async def navigate_execute(self, classification: Dict[str, Any], session_id: str, 
                              model_id: Optional[str] = None, region: Optional[str] = None) -> Dict[str, Any]:
@@ -139,24 +120,10 @@ class TaskSupervisor:
     async def orchestrate_agent_task(self, user_message: str, session_id: str, 
                                     model_id: Optional[str] = None, region: Optional[str] = None) -> Dict[str, Any]:
         """Execute a complex agent task."""
-        # Add user message with current date
-        current_date = datetime.now().strftime("%Y-%m-%d")
-        await self.conversation_manager.add_user_message(
-            session_id=session_id,
-            content=f"Today's date: {current_date}\n\nUser request: {user_message}"
-        )
+        # User message already stored in process_request() to avoid duplication
         
-        # Execute agent task
-        # Note: The agent orchestrator will handle its own tool usage/results recording
+        # Execute agent task - orchestrator handles conversation history recording
         result = await self.agent_orchestrator.execute(user_message, session_id, model_id, region)
-        
-        # Record final response
-        response_message = result.get("answer", "")
-        await self.conversation_manager.add_assistant_message(
-            session_id=session_id,
-            content=response_message,
-            source="agent_final_result"
-        )
         
         return result
     

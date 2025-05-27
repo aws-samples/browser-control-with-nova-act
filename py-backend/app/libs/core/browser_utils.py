@@ -33,20 +33,7 @@ class BrowserUtils:
                 state["page_title"] = response_data.get("page_title", "")
                 state["screenshot"] = response_data.get("screenshot")
                 
-                # Optional logging
-                if include_log and session_id and state["screenshot"] and "data" in state["screenshot"]:
-                    from app.libs.utils.decorators import log_thought
-                    log_thought(
-                        session_id=session_id,
-                        type_name="visualization",
-                        category="screenshot",
-                        node="Browser",
-                        content="Browser state retrieved",
-                        technical_details={
-                            "screenshot": state["screenshot"],
-                            "url": state["current_url"]
-                        }
-                    )
+
         except Exception as e:
             logger.error(f"Error getting browser state: {e}")
         
@@ -112,6 +99,9 @@ class BedrockClient:
         # Filter messages for Bedrock API compatibility if needed
         from app.libs.data.conversation_manager import prepare_messages_for_bedrock
         filtered_messages = prepare_messages_for_bedrock(messages)
+        
+        # Debug logging for Bedrock API call
+        logger.debug(f"Bedrock API call with {len(filtered_messages)} messages")
         
         request_params = {
             "modelId": self.model_id,

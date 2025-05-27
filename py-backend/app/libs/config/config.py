@@ -47,4 +47,4 @@ MCP_VERSION = "0.1.0"
 MCP_TRANSPORT = os.environ.get("NOVA_MCP_TRANSPORT", "stdio")
 MCP_PORT = int(os.environ.get("NOVA_MCP_PORT", "8000"))
 MCP_HOST = os.environ.get("NOVA_MCP_HOST", "localhost")
-MCP_LOG_LEVEL = os.environ.get("NOVA_MCP_LOG_LEVEL", "WARNING")
+MCP_LOG_LEVEL = os.environ.get("NOVA_MCP_LOG_LEVEL", "INFO")

@@ -51,48 +51,6 @@ class BaseTaskExecutor:
             }
         
         return await BrowserUtils.get_browser_state(browser_manager, session_id=session_id)
-    
-    async def _handle_exception(self, exception, session_id, start_time, browser_manager=None):
-        # Use centralized error handler
-        error_context = "task execution"
-        error_dict = error_handler.log_error(exception, error_context, session_id)
-        
-        # Try to get browser screenshot 
-        screenshot_data = None
-        if browser_manager:
-            try:
-                result = await BrowserUtils.capture_screenshot(browser_manager, session_id)
-                screenshot_data = result.get("screenshot")
-            except Exception as screenshot_error:
-                logger.warning(f"Failed to capture error screenshot: {screenshot_error}")
-        
-        # Log error as answer with timing information
-        log_thought(
-            session_id=session_id,
-            type_name="answer",
-            category="result",
-            node="Answer",
-            content=error_handler.format_user_error(error_dict)["message"],
-            technical_details={
-                "error": str(exception),
-                "processing_time_sec": round((time.time() - start_time), 2)
-            }
-        )
-        
-        # Also log as error type
-        log_thought(
-            session_id=session_id,
-            type_name="error",
-            category="error",
-            node="error",
-            content=f"Error: {str(exception)}"
-        )
-        
-        return {
-            "type": "error",
-            "error": error_message,
-            "screenshot": screenshot_data
-        }
 
 class NavigationExecutor(BaseTaskExecutor):
     """Executor for navigation tasks."""
@@ -391,13 +349,16 @@ class AgentOrchestrator(BaseTaskExecutor):
             # Get conversation history directly from store
             conversation_messages = await task_supervisor.conversation_store.load(session_id)
             
-            # Add initial message if needed
-            if not conversation_messages:
-                initial_message = {
+            # Enhance user message with browser context if available
+            if conversation_messages:
+                browser_context = await self._get_initial_browser_context(session_id)
+                self._enhance_user_message_with_context(conversation_messages, user_message, browser_context, current_date)
+            else:
+                # Create initial message if no conversation history
+                conversation_messages.append({
                     "role": "user",
                     "content": [{"text": f"Today's date: {current_date}\n\nUser request: {user_message}"}]
-                }
-                conversation_messages.append(initial_message)
+                })
                 await task_supervisor.conversation_store.save(session_id, conversation_messages)
             
             # Setup browser agent
@@ -430,6 +391,9 @@ class AgentOrchestrator(BaseTaskExecutor):
                 # Prepare messages for model
                 from app.libs.data.conversation_manager import prepare_messages_for_bedrock
                 filtered_messages = prepare_messages_for_bedrock(conversation_messages)
+                
+                # Debug logging for message structure
+                logger.debug(f"Supervisor processing turn {turn_count} with {len(filtered_messages)} messages")
                 
                 # Call model
                 response = self.bedrock_client.converse(
@@ -570,6 +534,39 @@ class AgentOrchestrator(BaseTaskExecutor):
             return await self._handle_exception(e, session_id, start_time, browser_manager)
 
     
+    async def _get_initial_browser_context(self, session_id: str) -> Dict[str, Any]:
+        """Get browser context for initial message if browser is already initialized."""
+        context = {"has_browser": False}
+        
+        try:
+            # Check if browser is already initialized
+            browser_state = await self.get_browser_state(session_id)
+            
+            if browser_state and browser_state.get("browser_initialized"):
+                context.update({
+                    "has_browser": True,
+                    "current_url": browser_state.get("current_url", ""),
+                    "page_title": browser_state.get("page_title", "")
+                })
+                
+                # Process screenshot if available
+                screenshot_data = browser_state.get("screenshot")
+                if screenshot_data and isinstance(screenshot_data, dict) and "data" in screenshot_data:
+                    try:
+                        import base64
+                        screenshot_bytes = base64.b64decode(screenshot_data["data"])
+                        context.update({
+                            "screenshot_bytes": screenshot_bytes,
+                            "screenshot_format": screenshot_data.get("format", "jpeg")
+                        })
+                    except Exception as e:
+                        logger.error(f"Error processing screenshot for agent context: {e}")
+        
+        except Exception as e:
+            logger.debug(f"Could not get browser context for agent: {e}")
+            
+        return context
+    
     async def _generate_final_summary(self, messages, model_id, session_id):
         """Generate final summary when max turns are reached."""
         log_thought(
@@ -625,13 +622,15 @@ class AgentOrchestrator(BaseTaskExecutor):
             if browser_state.get("screenshot"):
                 additional_params['supervisor_screenshot'] = browser_state.get("screenshot")
             
+            # Debug logging for agent execution
+            logger.debug(f"Executing agent mission with {len(additional_params)} parameters")
+            
             # Execute agent with provided state
             result = await agent_executor.execute(mission, session_id=session_id, max_turns=MAX_AGENT_TURNS, **additional_params)
             
-            # Update browser state after agent execution
-            from app.libs.core.browser_state_manager import get_browser_state_manager, BrowserStatus
-            state_manager = get_browser_state_manager()
-            await state_manager.update_browser_state(
+            # Update browser state after agent execution through agent manager
+            from app.libs.core.browser_state_manager import BrowserStatus
+            await self.agent_manager.update_browser_state(
                 session_id=session_id,
                 status=BrowserStatus.INITIALIZED,
                 current_url=result.get("current_url", ""),
@@ -727,3 +726,46 @@ class AgentOrchestrator(BaseTaskExecutor):
             "type": "error",
             "error": error_message,
         }
+
+    def _enhance_user_message_with_context(self, conversation_messages: List[Dict[str, Any]], user_message: str, browser_context: Dict[str, Any], current_date: str) -> None:
+        """Enhance the latest user message with browser context and date information."""
+        if browser_context["has_browser"]:
+            # Find and enhance the last user message with browser context
+            for i in range(len(conversation_messages) - 1, -1, -1):
+                if conversation_messages[i]["role"] == "user":
+                    original_text = user_message
+                    if conversation_messages[i]["content"] and isinstance(conversation_messages[i]["content"], list):
+                        for content_item in conversation_messages[i]["content"]:
+                            if isinstance(content_item, dict) and "text" in content_item:
+                                original_text = content_item["text"]
+                                break
+                    
+                    # Create enhanced message with browser context
+                    enhanced_text = f"Today's date: {current_date}\n\nCurrent browser context:\n- URL: {browser_context['current_url']}\n- Page: {browser_context['page_title']}\n\nUser request: {original_text}"
+                    enhanced_content = [{"text": enhanced_text}]
+                    
+                    # Add screenshot if available
+                    if browser_context.get("screenshot_bytes"):
+                        enhanced_content.append({
+                            "image": {
+                                "format": browser_context.get("screenshot_format", "jpeg"),
+                                "source": {"bytes": browser_context["screenshot_bytes"]}
+                            }
+                        })
+                    
+                    conversation_messages[i]["content"] = enhanced_content
+                    break
+        else:
+            # Add date to the last user message without browser context
+            for i in range(len(conversation_messages) - 1, -1, -1):
+                if conversation_messages[i]["role"] == "user":
+                    original_text = user_message
+                    if conversation_messages[i]["content"] and isinstance(conversation_messages[i]["content"], list):
+                        for content_item in conversation_messages[i]["content"]:
+                            if isinstance(content_item, dict) and "text" in content_item:
+                                original_text = content_item["text"]
+                                break
+                    
+                    enhanced_text = f"Today's date: {current_date}\n\nUser request: {original_text}"
+                    conversation_messages[i]["content"] = [{"text": enhanced_text}]
+                    break
