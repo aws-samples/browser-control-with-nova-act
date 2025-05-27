@@ -19,6 +19,8 @@ import {
 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { useBrowserControl } from "@/hooks/useBrowserControl";
+import { useAgentControl } from "@/hooks/useAgentControl";
+import { subscribeToEvent } from '@/services/eventService';
 
 interface BrowserControlProps {
   sessionId?: string;
@@ -37,6 +39,7 @@ function BrowserControl({
 }: BrowserControlProps) {
   const [isOpen, setIsOpen] = useState(false);
   const browserControl = useBrowserControl(sessionId);
+  const agentControl = useAgentControl(sessionId);
 
   // Notify parent component about user control status changes
   useEffect(() => {
@@ -45,15 +48,31 @@ function BrowserControl({
     }
   }, [browserControl.isUserControlInProgress, onUserControlStatusChange]);
 
+  // Subscribe to task status events to manage agent control state
+  useEffect(() => {
+    if (!sessionId) return;
 
-  const handleStopAgent = () => {
+    const unsubscribe = subscribeToEvent.taskStatusUpdate(({ status }) => {
+      if (status === 'start') {
+        agentControl.setCanStopAgent(true);
+      } else if (status === 'complete') {
+        agentControl.setCanStopAgent(false);
+      }
+    });
+
+    return unsubscribe;
+  }, [sessionId, agentControl]);
+
+
+  const handleStopAgent = async () => {
+    // Use the new agent control hook
+    await agentControl.stopAgent();
+    
+    // Call the original callback if provided
     if (onStopAgent) {
       onStopAgent();
     }
-    toast({
-      title: "Agent stopped",
-      description: "Agent task has been interrupted.",
-    });
+    
     setIsOpen(false);
   };
 
@@ -101,8 +120,9 @@ function BrowserControl({
   const hasActiveSession = browserControl.hasActiveSession;
 
   const handleDropdownOpenChange = async (open: boolean) => {
-    if (open && sessionId) {
-      // Refresh browser status when dropdown opens
+    if (open && sessionId && !isThinking) {
+      // Only refresh browser status when not thinking/processing
+      // Agent status is managed by ThoughtProcess events
       await browserControl.actions.refreshStatus();
     }
     setIsOpen(open);
@@ -134,7 +154,18 @@ function BrowserControl({
           
           <DropdownMenuSeparator />
           
-          {browserControl.browserState?.is_headless ? (
+          {isThinking ? (
+            <DropdownMenuItem 
+              disabled={true}
+              className="cursor-not-allowed opacity-50"
+            >
+              <Hand className="h-4 w-4 mr-2" />
+              Browser Control
+              <span className="ml-auto text-xs text-muted-foreground">
+                Processing...
+              </span>
+            </DropdownMenuItem>
+          ) : browserControl.browserState?.is_headless ? (
             <DropdownMenuItem 
               onClick={handleTakeControl}
               disabled={!hasActiveSession}
@@ -162,12 +193,12 @@ function BrowserControl({
           
           <DropdownMenuItem 
             onClick={handleStopAgent}
-            disabled={!isThinking}
+            disabled={!isThinking || !agentControl.canStopAgent}
             className="cursor-pointer"
           >
             <Square className="h-4 w-4 mr-2" />
             Stop Agent
-            {isThinking && (
+            {isThinking && agentControl.canStopAgent && (
               <span className="ml-auto text-xs bg-orange-100 dark:bg-orange-900 text-orange-800 dark:text-orange-200 px-1.5 py-0.5 rounded">
                 Active
               </span>
@@ -178,11 +209,11 @@ function BrowserControl({
           
           <DropdownMenuItem 
             onClick={handleCloseBrowser}
-            disabled={!hasActiveSession || browserControl.isLoading}
+            disabled={isThinking || !hasActiveSession || browserControl.isLoading}
             className="cursor-pointer"
           >
             <X className="h-4 w-4 mr-2" />
-            Close Browser
+            {isThinking ? "Processing..." : "Close Browser"}
           </DropdownMenuItem>
           
           

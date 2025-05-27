@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { apiRequest } from '@/utils/api';
+import { apiRequest, API_BASE_URL } from '@/utils/api';
 import { toast } from "@/hooks/use-toast";
 import { readFileAsText, readFileAsBase64, readFileAsPDFText } from "@/utils/fileHandling";
 import type { Message, FileUpload, AnalyzeAPIResponse, APIResponse } from '@/types/chat';
@@ -248,7 +248,7 @@ export const useChat = (selectedModel: string, selectedRegion: string): UseChatR
       if (sessionId) {
         try {
           // Use sendBeacon for reliable cleanup on page unload
-          const url = `/api/router/session/${sessionId}/terminate`;
+          const url = `${API_BASE_URL}/router/session/${sessionId}/terminate`;
           navigator.sendBeacon(url, '');
         } catch (error) {
           console.error('Failed to terminate session on unload:', error);

@@ -329,6 +329,8 @@ class AgentOrchestrator(BaseTaskExecutor):
         browser_manager = None
         
         try:
+            # Agent processing state is now managed via ThoughtProcess events
+            
             # Get current date
             current_date = datetime.now().strftime("%Y-%m-%d")
             
@@ -532,6 +534,9 @@ class AgentOrchestrator(BaseTaskExecutor):
         
         except Exception as e:
             return await self._handle_exception(e, session_id, start_time, browser_manager)
+        finally:
+            # Agent processing state cleared via ThoughtProcess events
+            pass
 
     
     async def _get_initial_browser_context(self, session_id: str) -> Dict[str, Any]:

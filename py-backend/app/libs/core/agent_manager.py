@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import time
 from typing import Dict, Any, Callable
 
 from app.act_agent.client.browser_manager import BrowserManager
@@ -22,12 +23,15 @@ class AgentManager:
         self._session_urls: Dict[str, str] = {}
         self._cleanup_timeouts = 30.0  # Configurable timeout
         
+        # Agent processing state management
+        self._agent_processing_states: Dict[str, Dict[str, Any]] = {}
+        
         # Get browser state manager instance
         self._browser_state_manager = BrowserStateManager()
         self._BrowserStatus = BrowserStatus
         
-        # Register with session manager as resource manager
-        asyncio.create_task(self._register_with_session_manager())
+        # Register with session manager as resource manager - defer until event loop is available
+        self._session_manager_registered = False
         
         # Add browser state change callback for logging
         self._browser_state_manager.add_event_callback(self._on_browser_state_change)
@@ -264,14 +268,20 @@ class AgentManager:
         except Exception as e:
             logger.error(f"Error in browser state change callback: {e}")
     
+    async def _ensure_session_manager_registered(self):
+        """Ensure session manager registration is done (called lazily)"""
+        if not self._session_manager_registered:
+            try:
+                session_manager = get_session_manager()
+                await session_manager.register_resource_manager("browser", self._browser_state_manager)
+                logger.info("Registered BrowserStateManager as browser resource manager")
+                self._session_manager_registered = True
+            except Exception as e:
+                logger.error(f"Failed to register browser state manager with session manager: {e}")
+    
     async def _register_with_session_manager(self):
         """Register browser state manager as resource manager with session manager"""
-        try:
-            session_manager = get_session_manager()
-            await session_manager.register_resource_manager("browser", self._browser_state_manager)
-            logger.info("Registered BrowserStateManager as browser resource manager")
-        except Exception as e:
-            logger.error(f"Failed to register browser state manager with session manager: {e}")
+        await self._ensure_session_manager_registered()
     
     async def cleanup_browser_manager(self, session_id: str):
         """Cleanup browser manager for session - called by browser state manager"""
@@ -290,6 +300,9 @@ class AgentManager:
         Get existing browser manager for session or create a new isolated one.
         Each session gets its own browser manager to avoid conflicts.
         """
+        # Ensure session manager is registered
+        await self._ensure_session_manager_registered()
+        
         # Validate session first
         session_manager = get_session_manager()
         session = await session_manager.validate_session(session_id)
@@ -515,6 +528,39 @@ class AgentManager:
     def has_browser_manager(self, session_id: str) -> bool:
         """Check if browser manager exists for session"""
         return session_id in self._browser_managers
+    
+    # Agent processing state management methods
+    def set_agent_processing(self, session_id: str, processing: bool, details: Dict[str, Any] = None):
+        """Set agent processing state for session"""
+        if processing:
+            self._agent_processing_states[session_id] = {
+                'processing': True,
+                'started_at': time.time(),
+                'stop_requested': False,
+                'details': details or {}
+            }
+        else:
+            # Clear processing state
+            self._agent_processing_states.pop(session_id, None)
+            
+    def is_agent_processing(self, session_id: str) -> bool:
+        """Check if agent is currently processing for session"""
+        state = self._agent_processing_states.get(session_id, {})
+        return state.get('processing', False)
+    
+    def request_agent_stop(self, session_id: str) -> bool:
+        """Request agent to stop processing for session"""
+        if session_id in self._agent_processing_states:
+            self._agent_processing_states[session_id]['stop_requested'] = True
+            return True
+        return False
+    
+    def is_agent_stop_requested(self, session_id: str) -> bool:
+        """Check if agent stop is requested for session"""
+        state = self._agent_processing_states.get(session_id, {})
+        return state.get('stop_requested', False)
+    
+    # get_agent_processing_info removed - status managed via ThoughtProcess events
 
 
 # Global instance for convenience
