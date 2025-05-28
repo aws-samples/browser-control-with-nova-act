@@ -110,9 +110,10 @@ class BedrockClient:
             "inferenceConfig": {"temperature": temperature}
         }
         
-        if isinstance(tools, dict) and 'tools' in tools:
-            request_params["toolConfig"] = {"tools": tools['tools']}
-        else:
-            request_params["toolConfig"] = {"tools": tools}
+        if tools and len(tools) > 0:
+            if isinstance(tools, dict) and 'tools' in tools:
+                request_params["toolConfig"] = {"tools": tools['tools']}
+            else:
+                request_params["toolConfig"] = {"tools": tools}
         
         return self.client.converse(**request_params)

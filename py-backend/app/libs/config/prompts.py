@@ -88,7 +88,7 @@ ROUTER_TOOL = {
         {
             'toolSpec': {
                 'name': 'classifyRequest',
-                'description': 'Classify user request into appropriate execution type',
+                'description': '**Classify user requests into appropriate browser execution strategies. This tool determines whether a user request should be handled as simple navigation, single browser action, or complex multi-step agent task. Use this tool to analyze user intent and select the most appropriate execution approach for browser automation tasks.**',
                 'inputSchema': {
                     'json': {
                         'type': 'object',
@@ -96,11 +96,11 @@ ROUTER_TOOL = {
                             'type': {
                                 'type': 'string',
                                 'enum': ['navigate', 'act', 'agent'],
-                                'description': 'The type of execution strategy'
+                                'description': 'The execution strategy type: "navigate" for simple website visits, "act" for single browser actions, "agent" for multi-step tasks requiring data retrieval or complex workflows'
                             },
                             'url': {
                                 'type': 'string',
-                                'description': 'Use this only for navigate type. Get it empty for other types'
+                                'description': 'Target URL for navigation. Required only when type is "navigate". Leave empty string for "act" and "agent" types.'
                             }
                         },
                         'required': ['type']
@@ -160,18 +160,18 @@ SUPERVISOR_TOOL = {
         {
             'toolSpec': {
                 'name': 'agentExecutor',
-                'description': 'Execute web browsing tasks to fulfill user requests efficiently. Handle user requests directly or break complex requests into sequential steps with specific goals.',
+                'description': '**Execute comprehensive web browsing tasks and browser automation workflows. This tool handles complex multi-step browser operations including navigation, form filling, data extraction, and interactive element manipulation. Use this tool to break down complex user requests into manageable browser automation tasks with specific objectives and context.**',
                 'inputSchema': {
                     'json': {
                         'type': 'object',
                         'properties': {
                             'mission': {
                                 'type': 'string',
-                                'description': 'Precise description of what the agent should accomplish in this execution'
+                                'description': 'Clear and precise description of the specific task the browser agent should accomplish. Include target websites, specific actions required, and expected outcomes. Example: "Navigate to Amazon and search for iPhone 15 Pro Max, then extract the top 3 search results with prices"'
                             },
                             'task_context': {
                                 'type': 'string',
-                                'description': 'Context information based on previous conversation and tasks to help the agent understand the continuity of the work'
+                                'description': 'Relevant context information from previous conversation turns and completed tasks. This helps the agent understand the continuity of work and build upon previous actions. Include any relevant URLs, form data, or state information from prior steps.'
                             }
                         },
                         'required': ['mission']

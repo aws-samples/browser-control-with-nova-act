@@ -55,8 +55,10 @@ function BrowserControl({
     const unsubscribe = subscribeToEvent.taskStatusUpdate(({ status }) => {
       if (status === 'start') {
         agentControl.setCanStopAgent(true);
+        agentControl.setIsStopInProgress(false); // Reset stop in progress when new task starts
       } else if (status === 'complete') {
         agentControl.setCanStopAgent(false);
+        agentControl.setIsStopInProgress(false); // Clear stop in progress when task completes
       }
     });
 
@@ -82,8 +84,6 @@ function BrowserControl({
       if (onTakeControl) {
         onTakeControl();
       }
-      // Refresh status after control change
-      await browserControl.actions.refreshStatus();
       setIsOpen(false);
     } catch (error) {
       console.error('Take control failed:', error);
@@ -94,8 +94,6 @@ function BrowserControl({
     try {
       await browserControl.actions.releaseControl();
       // The toast is already handled in the hook
-      // Refresh status after control change
-      await browserControl.actions.refreshStatus();
       setIsOpen(false);
     } catch (error) {
       console.error('Release control failed:', error);
@@ -119,12 +117,11 @@ function BrowserControl({
 
   const hasActiveSession = browserControl.hasActiveSession;
 
-  const handleDropdownOpenChange = async (open: boolean) => {
-    if (open && sessionId && !isThinking) {
-      // Only refresh browser status when not thinking/processing
-      // Agent status is managed by ThoughtProcess events
-      await browserControl.actions.refreshStatus();
-    }
+  const handleDropdownOpenChange = (open: boolean) => {
+    // No need to refresh status on every dropdown open
+    // - Stop button state: managed by ThoughtProcess events
+    // - Take/Release Control: determined by isThinking prop
+    // - Close Browser: determined by isThinking prop
     setIsOpen(open);
   };
 
@@ -193,20 +190,26 @@ function BrowserControl({
           
           <DropdownMenuItem 
             onClick={handleStopAgent}
-            disabled={!isThinking || !agentControl.canStopAgent}
+            disabled={!isThinking || !agentControl.canStopAgent || agentControl.isStopInProgress}
             className="cursor-pointer px-4 py-3 text-base hover:bg-red-50 dark:hover:bg-red-950/30"
           >
             <Square className="h-5 w-5 mr-3 text-red-600 dark:text-red-400" />
             <div className="flex-1">
               <div className="font-medium flex items-center gap-2">
                 Stop Agent
-                {isThinking && agentControl.canStopAgent && (
+                {agentControl.isStopInProgress ? (
+                  <span className="text-xs bg-orange-100 dark:bg-orange-900 text-orange-800 dark:text-orange-200 px-2 py-1 rounded-full font-semibold">
+                    Stopping...
+                  </span>
+                ) : isThinking && agentControl.canStopAgent ? (
                   <span className="text-xs bg-red-100 dark:bg-red-900 text-red-800 dark:text-red-200 px-2 py-1 rounded-full font-semibold">
                     Active
                   </span>
-                )}
+                ) : null}
               </div>
-              <div className="text-sm text-muted-foreground">Stop current task</div>
+              <div className="text-sm text-muted-foreground">
+                {agentControl.isStopInProgress ? "Finishing current task..." : "Stop current task"}
+              </div>
             </div>
           </DropdownMenuItem>
           

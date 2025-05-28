@@ -23,8 +23,10 @@ class AgentManager:
         self._session_urls: Dict[str, str] = {}
         self._cleanup_timeouts = 30.0  # Configurable timeout
         
-        # Agent processing state management
-        self._agent_processing_states: Dict[str, Dict[str, Any]] = {}
+        
+        # Thread-safe stop flag management
+        self._stop_flags: Dict[str, bool] = {}
+        self._processing_lock = asyncio.Lock()
         
         # Get browser state manager instance
         self._browser_state_manager = BrowserStateManager()
@@ -529,36 +531,23 @@ class AgentManager:
         """Check if browser manager exists for session"""
         return session_id in self._browser_managers
     
-    # Agent processing state management methods
-    def set_agent_processing(self, session_id: str, processing: bool, details: Dict[str, Any] = None):
-        """Set agent processing state for session"""
-        if processing:
-            self._agent_processing_states[session_id] = {
-                'processing': True,
-                'started_at': time.time(),
-                'stop_requested': False,
-                'details': details or {}
-            }
-        else:
-            # Clear processing state
-            self._agent_processing_states.pop(session_id, None)
-            
-    def is_agent_processing(self, session_id: str) -> bool:
-        """Check if agent is currently processing for session"""
-        state = self._agent_processing_states.get(session_id, {})
-        return state.get('processing', False)
+    # Agent processing state management methods removed - managed by frontend events
     
-    def request_agent_stop(self, session_id: str) -> bool:
-        """Request agent to stop processing for session"""
-        if session_id in self._agent_processing_states:
-            self._agent_processing_states[session_id]['stop_requested'] = True
+    async def request_agent_stop(self, session_id: str) -> bool:
+        """Thread-safe request to stop agent processing for session"""
+        async with self._processing_lock:
+            # Always set stop flag - let the execution loop decide if it's valid
+            self._stop_flags[session_id] = True
+            logger.info(f"Stop requested for session {session_id}")
             return True
-        return False
     
     def is_agent_stop_requested(self, session_id: str) -> bool:
-        """Check if agent stop is requested for session"""
-        state = self._agent_processing_states.get(session_id, {})
-        return state.get('stop_requested', False)
+        """Thread-safe check if agent stop is requested for session"""
+        return self._stop_flags.get(session_id, False)
+    
+    def clear_stop_flag(self, session_id: str):
+        """Clear stop flag for session (called when processing completes)"""
+        self._stop_flags.pop(session_id, None)
     
     # get_agent_processing_info removed - status managed via ThoughtProcess events
 

@@ -342,7 +342,7 @@ class AgentOrchestrator(BaseTaskExecutor):
                 node="Supervisor",
                 content=f"Received request from user: '{user_message}'. Creating execution plan..."
             )
-
+            
             # Initialize conversation manager with proper store
             from app.libs.data.conversation_manager import ConversationManager
             from app.api_routes.router import task_supervisor
@@ -380,8 +380,31 @@ class AgentOrchestrator(BaseTaskExecutor):
             # Main conversation loop
             turn_count = 0
             final_answer = ""
-
+            
+            
             while True:
+                # Check for stop request at beginning of each iteration
+                if self.agent_manager.is_agent_stop_requested(session_id):
+                    # Handle graceful stop with early termination logic
+                    final_answer = await self._handle_early_stop(
+                        session_id=session_id,
+                        conversation_messages=conversation_messages,
+                        turn_count=turn_count,
+                        user_message=user_message
+                    )
+                    break
+                
+                # Send task_status start event after first stop check (stop button now active)
+                if turn_count == 0:
+                    log_thought(
+                        session_id=session_id,
+                        type_name="task_status",
+                        category="status",
+                        node="System",
+                        content="Supervisor processing started - Stop button now active",
+                        technical_details={"status": "start"}
+                    )
+                
                 if turn_count >= MAX_SUPERVISOR_TURNS:
                     final_answer = await self._generate_final_summary(
                         conversation_messages, 
@@ -504,6 +527,16 @@ class AgentOrchestrator(BaseTaskExecutor):
                 # Increment turn count
                 turn_count += 1
             
+            # Send task_status complete event after exiting supervisor while loop
+            log_thought(
+                session_id=session_id,
+                type_name="task_status",
+                category="status",
+                node="System",
+                content="Supervisor processing completed - Stop button now inactive",
+                technical_details={"status": "complete"}
+            )
+            
             # Get final browser state and return results
             browser_state = await BrowserUtils.get_browser_state(browser_manager)
             
@@ -521,6 +554,7 @@ class AgentOrchestrator(BaseTaskExecutor):
                 }
             )
             
+            
             # Task execution completed - no additional log needed as answer was already sent
                         
             return {
@@ -535,8 +569,22 @@ class AgentOrchestrator(BaseTaskExecutor):
         except Exception as e:
             return await self._handle_exception(e, session_id, start_time, browser_manager)
         finally:
-            # Agent processing state cleared via ThoughtProcess events
-            pass
+            # Clear stop flag when processing completes
+            if session_id:
+                self.agent_manager.clear_stop_flag(session_id)
+                
+                # Ensure task_status complete event is sent when exiting finally block
+                try:
+                    log_thought(
+                        session_id=session_id,
+                        type_name="task_status",
+                        category="status",
+                        node="System",
+                        content="Supervisor execution ended - Stop button deactivated",
+                        technical_details={"status": "complete", "cleanup": True}
+                    )
+                except Exception as e:
+                    logger.error(f"Failed to send task completion event: {e}")
 
     
     async def _get_initial_browser_context(self, session_id: str) -> Dict[str, Any]:
@@ -728,9 +776,191 @@ class AgentOrchestrator(BaseTaskExecutor):
         )
         
         return {
-            "type": "error",
+            "type": "error", 
             "error": error_message,
         }
+    
+    async def _handle_early_stop(self, session_id: str, conversation_messages: List[Dict[str, Any]], 
+                                turn_count: int, user_message: str) -> str:
+
+        # Send immediate acknowledgment that stop request was received
+        log_thought(
+            session_id=session_id,
+            type_name="stop_notification",
+            category="status", 
+            node="Supervisor",
+            content="Stop request received - Preparing graceful termination...",
+            technical_details={
+                "stop_acknowledged": True,
+                "turn_count": turn_count,
+                "reason": "user_request"
+            }
+        )
+        
+        # Generate comprehensive summary of work completed so far
+        final_answer = await self._generate_supervisor_summary(
+            session_id=session_id,
+            conversation_messages=conversation_messages,
+            turn_count=turn_count,
+            user_message=user_message
+        )
+        
+        return final_answer
+    
+    async def _generate_supervisor_summary(self, session_id: str, conversation_messages: List[Dict[str, Any]], 
+                                          turn_count: int, user_message: str) -> str:
+        try:
+            # Get current browser state for context
+            browser_state = await self.get_browser_state(session_id)
+            current_url = browser_state.get("current_url", "")
+            page_title = browser_state.get("page_title", "")
+            screenshot = browser_state.get("screenshot")
+            
+            # Create summary request that focuses on the full context
+            browser_context = ""
+            if current_url:
+                browser_context = f"\n\nCurrent browser context:\n- URL: {current_url}\n- Page: {page_title}"
+            
+            summary_request = {
+                "role": "user",
+                "content": [{
+                    "text": f"The user has requested to stop the current task. Please provide a comprehensive summary that includes:\n\n1. What specific progress was made toward the original request: '{user_message}'\n2. What agent actions were executed and their results\n3. Any insights, findings, or partial results discovered\n4. Current status and what remains to be done{browser_context}\n\nBe specific and actionable in your summary."
+                }]
+            }
+            
+            # Add screenshot to summary request if available
+            if screenshot and isinstance(screenshot, dict) and "data" in screenshot:
+                try:
+                    import base64
+                    screenshot_bytes = base64.b64decode(screenshot["data"])
+                    summary_request["content"].append({
+                        "image": {
+                            "format": screenshot.get("format", "jpeg"),
+                            "source": {"bytes": screenshot_bytes}
+                        }
+                    })
+                except Exception as e:
+                    logger.error(f"Error processing screenshot for summary: {e}")
+            
+            # Prepare messages for summary (include key conversation elements)
+            summary_messages = []
+            
+            # Add original user request context
+            summary_messages.append({
+                "role": "user", 
+                "content": [{"text": f"Original user request: {user_message}"}]
+            })
+            
+            # Include key supervisor reasoning and agent results, but filter properly
+            agent_results = []
+            supervisor_reasoning = []
+            pending_tool_uses = set()
+            
+            for msg in conversation_messages:
+                role = msg.get("role", "")
+                content = msg.get("content", [])
+                
+                if role == "assistant":
+                    # Process assistant message - include only text, track tool uses
+                    for item in content:
+                        if isinstance(item, dict):
+                            if "text" in item:
+                                text = item["text"]
+                                if len(text) > 50:  # Only meaningful reasoning
+                                    supervisor_reasoning.append(text[:500])  # Truncate for summary
+                            elif "toolUse" in item:
+                                tool_use_id = item["toolUse"].get("toolUseId")
+                                if tool_use_id:
+                                    pending_tool_uses.add(tool_use_id)
+                                
+                elif role == "user":
+                    # Look for tool results from agents
+                    for item in content:
+                        if isinstance(item, dict) and "toolResult" in item:
+                            tool_result = item["toolResult"]
+                            tool_use_id = tool_result.get("toolUseId")
+                            if tool_use_id:
+                                pending_tool_uses.discard(tool_use_id)
+                            
+                            tool_content = tool_result.get("content", [])
+                            # Extract agent results
+                            for result_item in tool_content:
+                                if isinstance(result_item, dict) and "json" in result_item:
+                                    json_data = result_item["json"]
+                                    if "answer" in json_data:
+                                        agent_results.append(json_data["answer"][:300])  # Truncate
+            
+            # Add collected context to summary messages (only if no pending tool uses)
+            if supervisor_reasoning:
+                summary_messages.append({
+                    "role": "assistant",
+                    "content": [{"text": "Key supervisor analysis:\n" + "\n\n".join(supervisor_reasoning[-3:])}]  # Last 3 reasoning steps
+                })
+                
+            if agent_results:
+                summary_messages.append({
+                    "role": "user", 
+                    "content": [{"text": "Agent execution results:\n" + "\n\n".join(agent_results[-3:])}]  # Last 3 agent results
+                })
+            
+            # Add summary request
+            summary_messages.append(summary_request)
+            
+            # Generate summary using bedrock
+            from app.libs.data.conversation_manager import prepare_messages_for_bedrock
+            filtered_messages = prepare_messages_for_bedrock(summary_messages)
+            
+            summary_response = self.bedrock_client.converse(
+                messages=filtered_messages,
+                system_prompt=SUPERVISOR_PROMPT,
+                tools=None  # No tools for summary
+            )
+            
+            if summary_response.get('stopReason') == 'end_turn':
+                summary_text = summary_response['output']['message']['content'][0]['text']
+                return f"Task stopped by user request.\n\nSupervisor Summary:\n{summary_text}"
+            else:
+                # Fallback if AI summary fails
+                return self._create_supervisor_fallback_summary(
+                    user_message, turn_count, agent_results, supervisor_reasoning,
+                    current_url, page_title
+                )
+                
+        except Exception as e:
+            logger.error(f"Error generating supervisor summary: {str(e)}")
+            return self._create_supervisor_fallback_summary(
+                user_message, turn_count, [], [], "", ""
+            )
+    
+    def _create_supervisor_fallback_summary(self, user_message: str, turn_count: int, 
+                                           agent_results: List[str], supervisor_reasoning: List[str],
+                                           current_url: str = "", page_title: str = "") -> str:
+        summary_parts = [
+            "Task stopped by user request.",
+            f"\nOriginal request: {user_message}",
+            f"\nProgress: {turn_count} supervisor turns completed"
+        ]
+        
+        # Add browser context if available
+        if current_url:
+            summary_parts.append(f"\nCurrent browser state:")
+            summary_parts.append(f"  - URL: {current_url}")
+            summary_parts.append(f"  - Page: {page_title}")
+        
+        if agent_results:
+            summary_parts.append(f"\nAgent results ({len(agent_results)} executions):")
+            for i, result in enumerate(agent_results[:3], 1):
+                summary_parts.append(f"  {i}. {result[:150]}..." if len(result) > 150 else f"  {i}. {result}")
+                
+        if supervisor_reasoning:
+            summary_parts.append(f"\nKey analysis points:")
+            for reasoning in supervisor_reasoning[:2]:
+                summary_parts.append(f"  - {reasoning[:100]}..." if len(reasoning) > 100 else f"  - {reasoning}")
+                
+        if not agent_results and not supervisor_reasoning:
+            summary_parts.append("\nTask was stopped in early planning stages.")
+            
+        return "\n".join(summary_parts)
 
     def _enhance_user_message_with_context(self, conversation_messages: List[Dict[str, Any]], user_message: str, browser_context: Dict[str, Any], current_date: str) -> None:
         """Enhance the latest user message with browser context and date information."""

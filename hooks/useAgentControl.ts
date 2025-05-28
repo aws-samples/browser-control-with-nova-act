@@ -13,13 +13,16 @@ interface AgentStatus {
 interface UseAgentControlReturn {
   canStopAgent: boolean;
   isLoading: boolean;
+  isStopInProgress: boolean;
   stopAgent: () => Promise<void>;
   setCanStopAgent: (canStop: boolean) => void;
+  setIsStopInProgress: (inProgress: boolean) => void;
 }
 
 export function useAgentControl(sessionId?: string): UseAgentControlReturn {
   const [canStopAgent, setCanStopAgent] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [isStopInProgress, setIsStopInProgress] = useState(false);
 
   // No status refresh needed - managed by ThoughtProcess events
 
@@ -36,12 +39,16 @@ export function useAgentControl(sessionId?: string): UseAgentControlReturn {
 
       if (response.ok) {
         const data = await response.json();
+        
+        // Set stop in progress state
+        setIsStopInProgress(true);
+        
         toast({
-          title: "Agent stopped",
-          description: data.message || "Agent task has been interrupted.",
+          title: "Stop requested",
+          description: "Agent is finishing current task and will stop gracefully.",
         });
         
-        // Status will be updated via ThoughtProcess events
+        // Status will be updated via ThoughtProcess events when actually stopped
       } else {
         const errorData = await response.json();
         toast({
@@ -65,7 +72,9 @@ export function useAgentControl(sessionId?: string): UseAgentControlReturn {
   return {
     canStopAgent,
     isLoading,
+    isStopInProgress,
     stopAgent,
     setCanStopAgent,
+    setIsStopInProgress,
   };
 }

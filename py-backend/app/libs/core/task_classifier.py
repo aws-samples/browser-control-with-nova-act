@@ -68,14 +68,36 @@ class TaskClassifier:
             
             # Clean up images from conversation history (preserve current browser screenshot)
             self._cleanup_conversation_images(filtered_messages)
-            # Call model
-            response = self.bedrock.converse(
-                modelId=self.model_id,
-                system=[{"text": ROUTER_PROMPT}],
-                messages=filtered_messages,
-                inferenceConfig={"temperature": 0.1, "maxTokens": 1000},
-                toolConfig=ROUTER_TOOL
-            )
+            # Call model with Nova-optimized parameters
+            inference_config = {"temperature": 0.1, "maxTokens": 1000}
+            
+            # Add greedy decoding parameters for Nova models
+            if "nova" in self.model_id.lower():
+                inference_config.update({
+                    "temperature": 0.0,
+                    "topP": 1.0
+                })
+                # Add additional model request fields for Nova
+                additional_fields = {"inferenceConfig": {"topK": 1}}
+            else:
+                additional_fields = {}
+            
+            converse_params = {
+                "modelId": self.model_id,
+                "system": [{"text": ROUTER_PROMPT}],
+                "messages": filtered_messages,
+                "inferenceConfig": inference_config,
+                "toolConfig": {
+                    **ROUTER_TOOL,
+                    "toolChoice": {"auto": {}}
+                }
+            }
+            
+            # Add Nova-specific parameters if using Nova model
+            if additional_fields:
+                converse_params["additionalModelRequestFields"] = additional_fields
+            
+            response = self.bedrock.converse(**converse_params)
 
             # Get direct response text first
             direct_response = ""
