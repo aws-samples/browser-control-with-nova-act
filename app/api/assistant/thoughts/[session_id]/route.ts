@@ -5,10 +5,16 @@ export const fetchCache = 'force-no-store';
 async function connectWithRetry(backendUrl: string, maxAttempts = 5) {
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 120000);
+      
       const response = await fetch(backendUrl, {
         cache: "no-store",
-        headers: { "Accept": "text/event-stream" }
+        headers: { "Accept": "text/event-stream" },
+        signal: controller.signal
       });
+      
+      clearTimeout(timeoutId);
       
       if (response.ok) return response;
       

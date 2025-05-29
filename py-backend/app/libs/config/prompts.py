@@ -1,5 +1,6 @@
 # Import centralized configuration settings
 from app.libs.config.config import DEFAULT_MODEL_ID, MAX_SUPERVISOR_TURNS, MAX_AGENT_TURNS
+from datetime import datetime
 
 NOVA_ACT_AGENT_PROMPT="""
 You are a browser automation assistant that executes tasks by analyzing screenshots and performing precise actions.
@@ -41,6 +42,8 @@ You are a browser automation assistant that executes tasks by analyzing screensh
 - Prioritize efficiency - focus on key information first
 
 Only use information from current screenshots, not assumptions.
+
+Today's date is {current_date}. All information displayed in the browser is current and up-to-date as of this date.
 """
 
 ROUTER_PROMPT = """You're a helpful browser assistant. When users ask you something, first decide if browser tools are needed.
@@ -59,19 +62,19 @@ If the user wants information from the web or to interact with websites, classif
 1. "navigate" - For simple website visits (NOT for retrieving information)
    - Going to specific websites ("Visit amazon.com")
    - Basic web searches ("Search for iPhone 15")
-   → Format: {"type": "navigate", "url": "https://example.com"}
+   → Format: {{"type": "navigate", "url": "https://example.com"}}
 
 2. "act" - ONLY for extremely simple, single-step interactions with visible elements
    - ONE single action like clicking a single button or entering text in one field
    - NEVER use for multiple steps or numbered instructions
-   → Format: {"type": "act", "url": ""}
+   → Format: {{"type": "act", "url": ""}}
 
 3. "agent" - For ALL multi-step tasks and information retrieval
    - ALWAYS use "agent" when:
      1) instructions contain numbered steps or bullet points
      2) request contains multiple actions or fields (filling out forms, multiple clicks, or completing a workflow)
      3) user explicitly wants actual data or information from the browser
-   → Format: {"type": "agent", "url": ""}
+   → Format: {{"type": "agent", "url": ""}}
 
 ## CRITICAL RULES:
 - If instructions contain numbered steps (like "1.", "2.", etc.) or bullet points ("•", "-"), ALWAYS classify as "agent"
@@ -81,6 +84,8 @@ If the user wants information from the web or to interact with websites, classif
 - When in doubt, classify as "agent" rather than "act"
 
 Remember: Only use browser tools when the user clearly wants to browse the web or find online information.
+
+Today's date is {current_date}. All information displayed in the browser is current and up-to-date as of this date.
 """
 
 ROUTER_TOOL = {
@@ -153,6 +158,8 @@ Step 4: Confirm account creation and report success
 - Provide screenshots or relevant information when helpful
 
 Remember: Focus on executing the browser tasks the user requests accurately and efficiently.
+
+Today's date is {current_date}. All information displayed in the browser is current and up-to-date as of this date.
 """
 
 SUPERVISOR_TOOL = {
@@ -181,3 +188,19 @@ SUPERVISOR_TOOL = {
         }
     ]
 }
+
+def get_current_date():
+    """Get current date in YYYY-MM-DD format"""
+    return datetime.now().strftime("%Y-%m-%d")
+
+def get_nova_act_agent_prompt():
+    """Get NOVA_ACT_AGENT_PROMPT with current date"""
+    return NOVA_ACT_AGENT_PROMPT.format(current_date=get_current_date())
+
+def get_router_prompt():
+    """Get ROUTER_PROMPT with current date"""
+    return ROUTER_PROMPT.format(current_date=get_current_date())
+
+def get_supervisor_prompt():
+    """Get SUPERVISOR_PROMPT with current date"""
+    return SUPERVISOR_PROMPT.format(current_date=get_current_date())

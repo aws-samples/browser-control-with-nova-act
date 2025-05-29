@@ -8,7 +8,7 @@ from app.libs.core.agent_manager import AgentManager
 from app.libs.utils.utils import setup_paths
 from app.libs.utils.decorators import log_thought
 from app.libs.core.browser_utils import BrowserUtils, BedrockClient
-from app.libs.config.prompts import SUPERVISOR_PROMPT, SUPERVISOR_TOOL
+from app.libs.config.prompts import get_supervisor_prompt, SUPERVISOR_TOOL
 from app.libs.config.config import BROWSER_HEADLESS, MAX_AGENT_TURNS, MAX_SUPERVISOR_TURNS
 from app.libs.data.message import Message
 from app.libs.utils.error_handler import error_handler
@@ -423,7 +423,7 @@ class AgentOrchestrator(BaseTaskExecutor):
                 # Call model
                 response = self.bedrock_client.converse(
                     messages=filtered_messages,
-                    system_prompt=SUPERVISOR_PROMPT,
+                    system_prompt=get_supervisor_prompt(),
                     tools=SUPERVISOR_TOOL
                 )
                 
@@ -645,7 +645,7 @@ class AgentOrchestrator(BaseTaskExecutor):
         
         final_response = self.bedrock_client.converse(
             messages=filtered_messages,
-            system_prompt=SUPERVISOR_PROMPT,
+            system_prompt=get_supervisor_prompt(),
             tools=SUPERVISOR_TOOL
         )
         
@@ -912,7 +912,7 @@ class AgentOrchestrator(BaseTaskExecutor):
             
             summary_response = self.bedrock_client.converse(
                 messages=filtered_messages,
-                system_prompt=SUPERVISOR_PROMPT,
+                system_prompt=get_supervisor_prompt(),
                 tools=None  # No tools for summary
             )
             

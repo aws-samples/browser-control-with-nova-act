@@ -11,8 +11,88 @@ interface MessageComponentProps {
   message: Message;
 }
 
+// Format special backend message patterns for chat
+const formatSpecialChatMessage = (text: string): React.ReactNode | null => {
+  // Successfully navigated to ... The page title is ...
+  const navigationMatch = text.match(/Successfully navigated to (.*?)\. The page title is: (.*?)\.?$/);
+  if (navigationMatch) {
+    return (
+      <div className="bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-800 rounded-lg p-3 my-2">
+        <div className="flex items-center gap-2 mb-2">
+          <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+          <span className="font-medium text-green-800 dark:text-green-300 text-sm">Navigation Success</span>
+        </div>
+        <div className="space-y-1 text-sm">
+          <div>
+            <span className="text-gray-600 dark:text-gray-400">URL: </span>
+            <span className="font-mono text-xs bg-gray-100 dark:bg-gray-800 px-1 py-0.5 rounded break-all">{navigationMatch[1]}</span>
+          </div>
+          <div>
+            <span className="text-gray-600 dark:text-gray-400">Title: </span>
+            <span className="font-medium">{navigationMatch[2]}</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Action completed successfully (more specific patterns)
+  if (text.match(/Browser initialization completed successfully/i)) {
+    return (
+      <div className="bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-lg p-3 my-2">
+        <div className="flex items-center gap-2">
+          <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+          <span className="font-medium text-blue-800 dark:text-blue-300 text-sm">Action Completed</span>
+        </div>
+        <div className="mt-1 text-sm text-gray-700 dark:text-gray-300">
+          Browser initialization
+        </div>
+      </div>
+    );
+  }
+
+  // Simple "Action completed" message
+  if (text.trim().toLowerCase() === "action completed") {
+    return (
+      <div className="bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-lg p-3 my-2">
+        <div className="flex items-center gap-2">
+          <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+          <span className="font-medium text-blue-800 dark:text-blue-300 text-sm">Action Completed</span>
+        </div>
+        <div className="mt-1 text-sm text-gray-700 dark:text-gray-300">
+          Task execution finished successfully
+        </div>
+      </div>
+    );
+  }
+
+  // Generic action completed
+  const actionMatch = text.match(/(.*?)\s+(completed successfully)/i);
+  if (actionMatch && actionMatch[1].trim().length > 0) {
+    return (
+      <div className="bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-lg p-3 my-2">
+        <div className="flex items-center gap-2">
+          <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+          <span className="font-medium text-blue-800 dark:text-blue-300 text-sm">Action Completed</span>
+        </div>
+        <div className="mt-1 text-sm text-gray-700 dark:text-gray-300">
+          {actionMatch[1]}
+        </div>
+      </div>
+    );
+  }
+
+
+  return null;
+};
+
 const formatText = (text: string): React.ReactNode => {
-  const cleanedText = text.replace(/\n\nProcessing time: \d+\.\d+s/, '');
+  // Check for special message patterns first
+  const specialFormat = formatSpecialChatMessage(text);
+  if (specialFormat) {
+    return specialFormat;
+  }
+
   const lines = text.split('\n');
   
   return (
@@ -114,10 +194,10 @@ const MessageComponentBase: React.FC<MessageComponentProps> = ({ message }) => {
         
         <div className="relative">
           <div
-            className={`p-4 text-base shadow-soft ${
+            className={`p-4 text-base leading-relaxed shadow-sm ${
               message.role === "user"
                 ? "bg-primary text-white rounded-lg rounded-tr-sm"
-                : "bg-gray-50 dark:bg-gray-800/90 border border-gray-200 dark:border-gray-700 rounded-lg rounded-tl-sm hover-lift"
+                : "bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg rounded-tl-sm hover:bg-gray-100 dark:hover:bg-gray-750 transition-colors duration-200"
             }`}
           >
           {message.role === "assistant" ? (

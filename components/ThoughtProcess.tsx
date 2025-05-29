@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ChartColumnBig, Brain, Wrench, BarChart, Settings, CheckCircle, User, RefreshCw, Globe, Cog, Clock, Zap } from "lucide-react";
@@ -12,57 +13,124 @@ interface ThoughtProcessProps {
   currentQueryIndex: number;
   userInput: string;
   sessionId?: string;
+  isThinking?: boolean;
 }
 
 const ThoughtProcess: React.FC<ThoughtProcessProps> = React.memo(({ 
   queryDetails, 
-  sessionId
+  sessionId,
+  isThinking = false
 }) => {
   const { thoughts, connected, error, isComplete, screenshots } = useThoughtProcess(sessionId);
   const thoughtsEndRef = useAutoScroll([thoughts, connected, error]);
   
-  const ExpandableUrl = ({ url }) => {
-    const [expanded, setExpanded] = useState(false);
-    
-    const displayUrl = expanded 
-      ? url 
-      : url.length > 50 ? `${url.substring(0, 47)}...` : url;
+  const ScreenshotDialog = ({ screenshotData, url }) => {
+    const [open, setOpen] = useState(false);
     
     return (
-      <div className="mt-1 flex flex-col w-full">
-        <div 
-          className="bg-gray-100 dark:bg-gray-800 text-xs py-1.5 px-2 rounded border"
-        >
-          <div className="flex justify-between items-start">
-            <span className="font-medium mr-2 flex-shrink-0">URL:</span>
-            <div className="flex-grow">
-              <div className={`${expanded ? "whitespace-pre-wrap break-all" : "text-ellipsis whitespace-nowrap overflow-hidden"}`}>
-                {displayUrl}
+      <div className="mt-3 border rounded overflow-hidden flex flex-col">
+        <Dialog open={open} onOpenChange={setOpen}>
+          <DialogTrigger asChild>
+            <div className="cursor-pointer hover:opacity-90 transition-opacity relative">
+              <img 
+                src={`data:image/jpeg;base64,${screenshotData}`} 
+                alt="Browser screenshot" 
+                className="w-full h-auto"
+              />
+              <div className="absolute inset-0 flex items-center justify-center opacity-0 hover:opacity-100 bg-black/20 transition-opacity">
+                <div className="bg-white/90 dark:bg-gray-800/90 px-3 py-1 rounded-full text-sm font-medium">
+                  Click to enlarge
+                </div>
               </div>
             </div>
-            <button 
-              className="ml-2 text-blue-500 hover:text-blue-700 flex-shrink-0"
-              onClick={() => setExpanded(!expanded)}
-            >
-              {expanded ? "Collapse" : "Expand"}
-            </button>
-          </div>
-          {expanded && (
-            <div className="mt-2 pl-2 text-xs text-gray-500 flex">
-              <button 
-                className="text-blue-500 hover:text-blue-700"
-                onClick={() => {
-                  navigator.clipboard.writeText(url);
-                }}
-              >
-                Copy URL
-              </button>
-            </div>
-          )}
-        </div>
+          </DialogTrigger>
+          <DialogContent className="max-w-4xl max-h-[90vh] p-2">
+            <DialogHeader>
+              <DialogTitle>Browser Screenshot</DialogTitle>
+            </DialogHeader>
+            <img 
+              src={`data:image/jpeg;base64,${screenshotData}`} 
+              alt="Browser screenshot" 
+              className="w-full h-auto rounded"
+            />
+            {url && (
+              <div className="mt-2 p-3 bg-gray-50 dark:bg-gray-800 rounded">
+                <span className="font-medium text-sm">URL: </span>
+                <span className="text-sm break-all">{url}</span>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
       </div>
     );
-  };  
+  };
+
+  // Format special backend message patterns
+  const formatSpecialMessage = (content: string) => {
+    const patterns = [
+      {
+        // Successfully navigated to ... The page title is ...
+        regex: /Successfully navigated to (.*?)\. The page title is: (.*?)\.?$/,
+        render: (match) => (
+          <div className="bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-800 rounded-lg p-3">
+            <div className="flex items-center gap-2 mb-2">
+              <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+              <span className="font-medium text-green-800 dark:text-green-300 text-sm">Navigation Success</span>
+            </div>
+            <div className="space-y-1 text-sm">
+              <div>
+                <span className="text-gray-600 dark:text-gray-400">URL: </span>
+                <span className="font-mono text-xs bg-gray-100 dark:bg-gray-800 px-1 py-0.5 rounded break-all">{match[1]}</span>
+              </div>
+              <div>
+                <span className="text-gray-600 dark:text-gray-400">Title: </span>
+                <span className="font-medium">{match[2]}</span>
+              </div>
+            </div>
+          </div>
+        )
+      },
+      {
+        // Action completed successfully
+        regex: /(.*?)\s+(completed successfully|action completed)/i,
+        render: (match) => (
+          <div className="bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-lg p-3">
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+              <span className="font-medium text-blue-800 dark:text-blue-300 text-sm">Action Completed</span>
+            </div>
+            <div className="mt-1 text-sm text-gray-700 dark:text-gray-300">
+              {match[1]}
+            </div>
+          </div>
+        )
+      },
+      {
+        // Browser initialization completed successfully
+        regex: /Browser initialization completed successfully/i,
+        render: () => (
+          <div className="bg-purple-50 dark:bg-purple-950/30 border border-purple-200 dark:border-purple-800 rounded-lg p-3">
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 bg-purple-500 rounded-full"></div>
+              <span className="font-medium text-purple-800 dark:text-purple-300 text-sm">Browser Ready</span>
+            </div>
+            <div className="mt-1 text-sm text-gray-700 dark:text-gray-300">
+              Browser session initialized and ready for automation
+            </div>
+          </div>
+        )
+      }
+    ];
+
+    for (const pattern of patterns) {
+      const match = content.match(pattern.regex);
+      if (match) {
+        return pattern.render(match);
+      }
+    }
+
+    return null;
+  };
   
   const nodeColorMap: Record<string, {bg: string, icon: React.ReactNode, border: string}> = {
     "Agent": { 
@@ -109,18 +177,26 @@ const ThoughtProcess: React.FC<ThoughtProcessProps> = React.memo(({
   
 
   return (
-    <Card className="w-full lg:w-2/5 xl:w-1/3 md:w-2/5 flex flex-col h-full overflow-hidden shadow-sm border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900">
+    <Card className="w-full lg:w-2/5 xl:w-1/3 md:w-2/5 flex flex-col h-full shadow-sm border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900">
       <CardHeader className="py-3 px-5 border-b border-gray-100 dark:border-gray-800 shrink-0">
         <div className="flex items-center justify-between">
-          <CardTitle className="text-base">Thought Process</CardTitle>
+          <div className="flex items-center gap-2">
+            <CardTitle className="text-base">Thought Process</CardTitle>
+            {isThinking && (
+              <div className="flex items-center gap-1">
+                <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
+                <span className="text-xs text-blue-600 dark:text-blue-400 animate-pulse">Processing...</span>
+              </div>
+            )}
+          </div>
           <div className="flex items-center gap-1">
             <Button variant="ghost" size="icon" className="h-7 w-7 text-gray-500" title="Refresh">
-              <RefreshCw className="h-3.5 w-3.5" />
+              <RefreshCw className={`h-3.5 w-3.5 ${isThinking ? 'animate-spin' : ''}`} />
             </Button>
           </div>
         </div>
       </CardHeader>
-      <CardContent className="flex-1 overflow-y-auto min-h-0 p-4">
+      <CardContent className="flex-1 overflow-y-auto p-4 space-y-4">
         {(sessionId) && (
           <div className="mb-3 px-2 py-1 rounded text-xs text-gray-500 dark:text-gray-400">
             {sessionId && <div>Session: {sessionId}</div>}
@@ -248,22 +324,22 @@ const ThoughtProcess: React.FC<ThoughtProcessProps> = React.memo(({
                           </div>
                         </div>
 
-                        <div className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap">
-                          {displayContent}
+                        <div className="text-sm text-gray-700 dark:text-gray-300">
+                          {(() => {
+                            const specialFormat = formatSpecialMessage(displayContent);
+                            if (specialFormat) {
+                              return specialFormat;
+                            }
+                            return <div className="whitespace-pre-wrap">{displayContent}</div>;
+                          })()}
                           
-                          {/* Screenshot rendering with ExpandableUrl */}
+                          {/* Screenshot rendering with Popup */}
                           {thought.technical_details?.screenshotId && 
                            screenshots[thought.technical_details.screenshotId] && (
-                            <div className="mt-3 border rounded overflow-hidden flex flex-col">
-                              <img 
-                                src={`data:image/jpeg;base64,${screenshots[thought.technical_details.screenshotId]}`} 
-                                alt="Browser screenshot" 
-                                className="w-full h-auto"
-                              />
-                              {thought.technical_details.url && (
-                                <ExpandableUrl url={thought.technical_details.url} />
-                              )}
-                            </div>
+                            <ScreenshotDialog 
+                              screenshotData={screenshots[thought.technical_details.screenshotId]}
+                              url={thought.technical_details.url}
+                            />
                           )}
                           
                           {/* Technical details */}
@@ -300,6 +376,25 @@ const ThoughtProcess: React.FC<ThoughtProcessProps> = React.memo(({
               </React.Fragment>
               );
             })}
+            
+            {/* Loading indicator for new thoughts */}
+            {isThinking && (
+              <Card className="mb-4 p-3 border bg-blue-50/30 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800 animate-pulse">
+                <div className="flex items-start gap-3">
+                  <div className="w-5 h-5 bg-blue-500 rounded-full animate-pulse"></div>
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 mb-2">
+                      <div className="h-4 bg-blue-200 dark:bg-blue-800 rounded w-20 animate-pulse"></div>
+                      <div className="h-3 bg-blue-100 dark:bg-blue-900 rounded w-16 animate-pulse"></div>
+                    </div>
+                    <div className="space-y-2">
+                      <div className="h-3 bg-blue-100 dark:bg-blue-900 rounded w-full animate-pulse"></div>
+                      <div className="h-3 bg-blue-100 dark:bg-blue-900 rounded w-3/4 animate-pulse"></div>
+                    </div>
+                  </div>
+                </div>
+              </Card>
+            )}
             
             <div ref={thoughtsEndRef} className="h-4" />
           </div>

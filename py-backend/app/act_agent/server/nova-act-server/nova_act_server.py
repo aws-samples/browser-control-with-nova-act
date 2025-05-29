@@ -82,7 +82,7 @@ async def navigate(url: str) -> Dict[str, Any]:
         return create_error_response(e, "navigate to URL")
 
 @mcp.tool()
-async def act(instruction: str, max_steps: Optional[int] = 3) -> Dict[str, Any]:
+async def act(instruction: str, max_steps: Optional[int] = 2) -> Dict[str, Any]:
     """
     Execute browser actions using natural language instructions focused on visible elements.
     
@@ -97,11 +97,11 @@ async def act(instruction: str, max_steps: Optional[int] = 3) -> Dict[str, Any]:
                    - "Hover over the results container, then scroll down to see 'Best Seller' button"
                    - "Click the 'State' dropdown, then type 'California'" (for long dropdowns)
         
-        max_steps: (Optional) Maximum number of steps to execute (default: 3)
+        max_steps: (Optional) Maximum number of steps to execute (default: 2)
                   Use values >3 for multi-step actions like:
                   - Filling multiple form fields (max_steps=8)
                   - Extensive scrolling (max_steps=5)
-                  - Sequential interactions (max_steps=3)
+                  - Sequential interactions (max_steps=2)
     """
     try:
         browser = get_browser_controller()

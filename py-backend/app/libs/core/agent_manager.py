@@ -408,11 +408,20 @@ class AgentManager:
         """Check if browser manager is still functional"""
         try:
             if not (manager.browser_initialized and manager.session):
+                logger.debug("Browser manager not functional: not initialized or no session")
                 return False
                 
             # Quick health check with timeout
             state_task = BrowserUtils.get_browser_state(manager)
-            await asyncio.wait_for(state_task, timeout=2.0)
+            browser_state = await asyncio.wait_for(state_task, timeout=5.0)
+            
+            # Check if browser is actually functional by validating URL
+            current_url = browser_state.get("current_url", "")
+            if not current_url or current_url.lower() in ["", "unknown", "error getting url"]:
+                logger.debug(f"Browser manager not functional: invalid URL '{current_url}'")
+                return False
+                
+            logger.debug(f"Browser manager functional with URL: {current_url}")
             return True
             
         except Exception as e:

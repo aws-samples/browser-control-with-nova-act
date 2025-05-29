@@ -4,7 +4,7 @@ import traceback
 import re
 from typing import Dict, Any, Optional, List
 import boto3
-from app.libs.config.prompts import ROUTER_PROMPT, ROUTER_TOOL
+from app.libs.config.prompts import get_router_prompt, ROUTER_TOOL
 
 logger = logging.getLogger("task_classifier")
 
@@ -84,7 +84,7 @@ class TaskClassifier:
             
             converse_params = {
                 "modelId": self.model_id,
-                "system": [{"text": ROUTER_PROMPT}],
+                "system": [{"text": get_router_prompt()}],
                 "messages": filtered_messages,
                 "inferenceConfig": inference_config,
                 "toolConfig": {

@@ -43,7 +43,7 @@ class BrowserController:
                 nova_act_api_key=self.api_key,
                 headless=headless,
                 user_data_dir=DEFAULT_BROWSER_SETTINGS.get("user_data_dir"),
-                clone_user_data_dir=DEFAULT_BROWSER_SETTINGS.get("clone_user_data_dir", True),
+                clone_user_data_dir=DEFAULT_BROWSER_SETTINGS.get("clone_user_data_dir", False),
                 #quiet=DEFAULT_BROWSER_SETTINGS.get("quiet", False),
                 screen_width=1600,
                 screen_height=1200,

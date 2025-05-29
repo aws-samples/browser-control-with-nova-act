@@ -6,7 +6,7 @@ from typing import Dict, List
 from app.libs.core.browser_utils import BrowserUtils, BedrockClient
 from app.libs.utils.decorators import log_thought
 from app.libs.data.message import Message
-from app.libs.config.prompts import NOVA_ACT_AGENT_PROMPT, DEFAULT_MODEL_ID
+from app.libs.config.prompts import get_nova_act_agent_prompt, DEFAULT_MODEL_ID
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +25,7 @@ class AgentExecutor:
         model_id = self.browser_manager.server_config.get("model_id", DEFAULT_MODEL_ID)
         return self.bedrock_client.converse(
             messages=messages, 
-            system_prompt=NOVA_ACT_AGENT_PROMPT,
+            system_prompt=get_nova_act_agent_prompt(),
             tools=tools
         )
     
@@ -350,7 +350,7 @@ class AgentExecutor:
                 try:
                     final_response = self.bedrock_client.converse(
                         messages=messages,
-                        system_prompt=NOVA_ACT_AGENT_PROMPT,
+                        system_prompt=get_nova_act_agent_prompt(),
                         tools=bedrock_tools
                     )
                     
@@ -523,7 +523,7 @@ class AgentExecutor:
             # Generate summary using bedrock client
             summary_response = self.bedrock_client.converse(
                 messages=summary_messages,
-                system_prompt=NOVA_ACT_AGENT_PROMPT,
+                system_prompt=get_nova_act_agent_prompt(),
                 tools=None  # No tools for summary generation
             )
             

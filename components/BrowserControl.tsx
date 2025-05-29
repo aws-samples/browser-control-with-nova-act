@@ -38,6 +38,7 @@ function BrowserControl({
   onUserControlStatusChange 
 }: BrowserControlProps) {
   const [isOpen, setIsOpen] = useState(false);
+  const [lastBrowserState, setLastBrowserState] = useState<{url: string, title: string} | null>(null);
   const browserControl = useBrowserControl(sessionId);
   const agentControl = useAgentControl(sessionId);
 
@@ -80,6 +81,18 @@ function BrowserControl({
 
   const handleTakeControl = async () => {
     try {
+      // Save current browser state before taking control
+      if (browserControl.browserState?.current_url) {
+        setLastBrowserState({
+          url: browserControl.browserState.current_url,
+          title: browserControl.browserState.page_title || ''
+        });
+        console.log('Saved browser state before taking control:', {
+          url: browserControl.browserState.current_url,
+          title: browserControl.browserState.page_title
+        });
+      }
+      
       await browserControl.actions.takeControl();
       if (onTakeControl) {
         onTakeControl();
@@ -92,14 +105,53 @@ function BrowserControl({
 
   const handleReleaseControl = async () => {
     try {
-      await browserControl.actions.releaseControl();
-      // The toast is already handled in the hook
+      // First try to release control normally
+      try {
+        await browserControl.actions.releaseControl();
+        console.log('Released control successfully');
+        setIsOpen(false);
+        return;
+      } catch (releaseError) {
+        console.log('Failed to release control, checking if browser was closed:', releaseError);
+        
+        // If release fails, it might be because the browser was closed
+        // Check current browser status
+        await browserControl.actions.refreshStatus();
+        
+        // Wait a moment for status to update
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+        // If browser is not active and we have saved state, reinitialize
+        if (!browserControl.hasActiveSession && lastBrowserState) {
+          console.log('Browser was closed, reinitializing with saved state:', lastBrowserState);
+          
+          toast({
+            title: "Browser Recovery",
+            description: "Browser was closed. Reinitializing with last known state...",
+          });
+          
+          // Initialize browser in headless mode with the last known URL
+          await browserControl.actions.initializeBrowser(true, lastBrowserState.url);
+          
+          toast({
+            title: "Browser Recovered",
+            description: `Browser reinitialized at ${lastBrowserState.url}`,
+          });
+          
+          // Clear saved state after successful recovery
+          setLastBrowserState(null);
+        } else {
+          // If we can't recover, just show the original error
+          throw releaseError;
+        }
+      }
+      
       setIsOpen(false);
     } catch (error) {
       console.error('Release control failed:', error);
       toast({
         title: "Error",
-        description: "Failed to release control.",
+        description: "Failed to release control and recover browser.",
         variant: "destructive"
       });
     }
@@ -118,10 +170,11 @@ function BrowserControl({
   const hasActiveSession = browserControl.hasActiveSession;
 
   const handleDropdownOpenChange = (open: boolean) => {
-    // No need to refresh status on every dropdown open
-    // - Stop button state: managed by ThoughtProcess events
-    // - Take/Release Control: determined by isThinking prop
-    // - Close Browser: determined by isThinking prop
+    // Refresh browser status when dropdown opens, but only if not thinking
+    if (open && !isThinking && sessionId) {
+      console.log('Refreshing browser status for session:', sessionId);
+      browserControl.actions.refreshStatus();
+    }
     setIsOpen(open);
   };
 

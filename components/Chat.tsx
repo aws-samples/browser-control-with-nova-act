@@ -3,8 +3,9 @@ import { Card, CardContent, CardHeader, CardFooter, CardTitle, CardDescription }
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Send, Paperclip, Settings, Moon, Sun, Trash2, Globe, Search, Code } from "lucide-react";
+import { Send, Paperclip, Settings, Moon, Sun, Trash2, Globe, Search, Code, ChevronDown, Cpu, MapPin } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import FilePreview from "@/components/FilePreview";
 import { MessageComponent } from "@/components/MessageComponent";
 import type { Message, Model, FileUpload } from '@/types/chat';
@@ -80,13 +81,14 @@ const Chat: React.FC<ChatProps> = ({
   // Auto-scroll when messages change or thinking status changes
   const messagesEndRef = useAutoScroll([messages, isLoading, isThinking]);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isModelDialogOpen, setIsModelDialogOpen] = useState(false);
   const { theme, setTheme } = useTheme();
   
   // Function to open MCP settings modal
   const onMCPSettingsOpen = () => setIsSettingsOpen(true);
 
   return (
-    <Card className="w-full lg:w-3/5 xl:w-2/3 md:w-3/5 flex flex-col h-full shadow-sm border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900">
+    <Card className="w-full lg:w-3/5 xl:w-2/3 md:w-3/5 flex flex-col h-full shadow-xl bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800">
       <CardHeader className="py-3 px-5 border-b border-gray-100 dark:border-gray-800">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-3">
@@ -104,56 +106,115 @@ const Chat: React.FC<ChatProps> = ({
             )}
           </div>
           <div className="flex items-center space-x-2">
-            <div className="w-px h-5 bg-gray-200 dark:bg-gray-700 mx-1 hidden"></div>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline" className="h-8 text-sm">
-                  {regions.find((r) => r.id === selectedRegion)?.name}
+            {/* Modern Model & Region Selector */}
+            <Dialog open={isModelDialogOpen} onOpenChange={setIsModelDialogOpen}>
+              <DialogTrigger asChild>
+                <Button 
+                  variant="outline" 
+                  className="h-8 px-3 text-xs bg-white/80 dark:bg-gray-800/80 border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors duration-200 text-gray-700 dark:text-gray-300"
+                >
+                  <div className="flex items-center gap-2">
+                    <Settings className="h-3.5 w-3.5" />
+                    <span className="font-medium">Bedrock Settings</span>
+                    <ChevronDown className="h-3 w-3" />
+                  </div>
                 </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent>
-                {regions.map((region) => (
-                  <DropdownMenuItem key={region.id} onSelect={() => setSelectedRegion(region.id)}>
-                    {region.name}
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
+              </DialogTrigger>
+              <DialogContent className="sm:max-w-[500px]">
+                <DialogHeader>
+                  <DialogTitle className="flex items-center gap-2">
+                    <Settings className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                    Bedrock Settings
+                  </DialogTitle>
+                </DialogHeader>
+                <div className="grid gap-6 py-4">
+                  {/* Model Selection */}
+                  <div className="space-y-3">
+                    <label className="text-sm font-medium flex items-center gap-2">
+                      <Cpu className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                      AI Model
+                    </label>
+                    <div className="grid gap-2">
+                      {models.map((model) => (
+                        <Button
+                          key={model.id}
+                          variant={selectedModel === model.id ? "default" : "outline"}
+                          className={`justify-start h-auto p-3 ${
+                            selectedModel === model.id 
+                              ? "bg-blue-600 hover:bg-blue-700 text-white" 
+                              : "hover:bg-blue-50 dark:hover:bg-blue-950/50"
+                          }`}
+                          onClick={() => setSelectedModel(model.id)}
+                        >
+                          <div className="text-left">
+                            <div className="font-medium">{model.name}</div>
+                            <div className="text-xs opacity-70 mt-1">
+                              {model.id === 'anthropic.claude-3-5-sonnet-20241022-v2:0' && 'Most capable model for complex reasoning'}
+                              {model.id === 'anthropic.claude-3-5-haiku-20241022-v1:0' && 'Fast and efficient for simple tasks'}
+                              {model.id === 'us.anthropic.claude-sonnet-4-20250514-v1:0' && 'Latest model with enhanced capabilities'}
+                            </div>
+                          </div>
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
 
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline" className="h-8 text-sm">
-                  {models.find((m) => m.id === selectedModel)?.name}
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent>
-                {models.map((model) => (
-                  <DropdownMenuItem key={model.id} onSelect={() => setSelectedModel(model.id)}>
-                    {model.name}
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
+                  {/* Region Selection */}
+                  <div className="space-y-3">
+                    <label className="text-sm font-medium flex items-center gap-2">
+                      <MapPin className="h-4 w-4 text-green-600 dark:text-green-400" />
+                      AWS Region
+                    </label>
+                    <div className="grid grid-cols-2 gap-2">
+                      {regions.map((region) => (
+                        <Button
+                          key={region.id}
+                          variant={selectedRegion === region.id ? "default" : "outline"}
+                          className={`justify-start ${
+                            selectedRegion === region.id 
+                              ? "bg-green-600 hover:bg-green-700 text-white" 
+                              : "hover:bg-green-50 dark:hover:bg-green-950/50"
+                          }`}
+                          onClick={() => setSelectedRegion(region.id)}
+                        >
+                          <MapPin className="h-3.5 w-3.5 mr-2" />
+                          {region.name}
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+                <div className="flex justify-end">
+                  <Button onClick={() => setIsModelDialogOpen(false)}>
+                    Done
+                  </Button>
+                </div>
+              </DialogContent>
+            </Dialog>
             
             <Button
               variant="outline"
               size="sm"
               onClick={onMCPSettingsOpen}
-              title="MCP Server Settings"
-              className="h-8 text-xs flex gap-1 items-center">
-              <Settings className="h-3.5 w-3.5" />
-              <span>Tool</span>
+              title="Configure Tool Settings"
+              className="h-8 text-xs flex gap-1 items-center bg-white/80 dark:bg-gray-800/80 border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors duration-200 text-gray-700 dark:text-gray-300">
+              <Code className="h-3.5 w-3.5" />
+              <span className="font-medium">Tool Settings</span>
             </Button>
             
             {/* Theme button moved from footer to header */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="sm" className="h-8 text-xs flex gap-1 items-center">
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  className="h-8 text-xs flex gap-1 items-center bg-white/80 dark:bg-gray-800/80 border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors duration-200 text-gray-700 dark:text-gray-300"
+                >
                   <div className="relative flex items-center justify-center w-3.5 h-3.5">
                     <Sun className="h-3.5 w-3.5 absolute rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
                     <Moon className="h-3.5 w-3.5 absolute rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
                   </div>
-                  <span>Theme</span>
+                  <span className="font-medium">Theme</span>
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
@@ -174,11 +235,11 @@ const Chat: React.FC<ChatProps> = ({
               variant="outline"
               size="sm"
               onClick={onReset}
-              className="h-8 text-xs flex gap-1 items-center"
+              className="h-8 text-xs flex gap-1 items-center bg-white/80 dark:bg-gray-800/80 border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors duration-200 text-gray-700 dark:text-gray-300"
               title="Reset Chat"
             >
               <Trash2 className="h-3.5 w-3.5" />
-              <span>Clear Chat</span>
+              <span className="font-medium">Clear Chat</span>
             </Button>
           </div>
         </div>
@@ -186,50 +247,49 @@ const Chat: React.FC<ChatProps> = ({
 
       <CardContent className="flex-1 overflow-y-auto p-5 scroll-smooth">
         {messages.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full animate-fade-in-up max-w-md mx-auto">
-            <div className="relative mb-6 group">
-              <div className="absolute -inset-1 bg-gradient-to-r from-primary to-blue-600 rounded-full opacity-75 blur-sm group-hover:opacity-100 transition duration-500 group-hover:duration-200"></div>
-              <Avatar className="w-16 h-16 relative">
-                <AvatarImage src="/bedrock-logo.png" alt="Web Browser Assistant Avatar" width={64} height={64} className="animate-pulse-subtle" />
+          <div className="flex flex-col items-center justify-center h-full max-w-lg mx-auto">
+            <div className="mb-8">
+              <Avatar className="w-12 h-12 mx-auto mb-4">
+                <AvatarImage src="/bedrock-logo.png" alt="Web Browser Assistant Avatar" />
               </Avatar>
+              <h2 className="text-xl font-semibold mb-2 text-gray-900 dark:text-gray-50 text-center">Web Browser Assistant</h2>
+              <p className="text-gray-600 dark:text-gray-400 text-center text-sm">Navigate the web and interact with websites</p>
             </div>
-            <h2 className="text-2xl font-medium mb-2 text-gray-900 dark:text-gray-50 tracking-tight heading-font animate-fade-in">Web Browser Assistant</h2>
-            <p className="text-gray-500 dark:text-gray-400 mb-10 text-center animate-fade-in delay-100">Navigate the web and interact with websites.</p>
             
-            <div className="grid grid-cols-1 gap-5 w-full">
-              <div className="flex items-center gap-4 p-4 bg-gradient-to-r from-gray-50 to-gray-100 dark:from-gray-800/20 dark:to-gray-900/40 rounded-xl border border-gray-100 dark:border-gray-800 hover-lift shadow-soft animate-fade-in delay-100">
-                <div className="w-10 h-10 flex items-center justify-center rounded-full bg-blue-50 dark:bg-blue-900/30">
-                  <Globe className="text-blue-500 dark:text-blue-400 w-5 h-5" />
+            <div className="grid grid-cols-1 gap-3 w-full">
+              <div className="flex items-center gap-3 p-3 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
+                <div className="w-8 h-8 flex items-center justify-center rounded-lg bg-blue-50 dark:bg-blue-900/30">
+                  <Globe className="text-blue-600 dark:text-blue-400 w-4 h-4" />
                 </div>
                 <div>
-                  <h3 className="font-medium text-gray-900 dark:text-gray-50 mb-1">Web Navigation</h3>
-                  <p className="text-gray-500 dark:text-gray-400 text-sm">Visit websites, navigate pages, and interact with web content.</p>
+                  <h3 className="font-medium text-gray-900 dark:text-gray-50 text-sm">Web Navigation</h3>
+                  <p className="text-gray-600 dark:text-gray-400 text-xs">Visit websites and navigate pages</p>
                 </div>
               </div>
               
-              <div className="flex items-center gap-4 p-4 bg-gradient-to-r from-gray-50 to-gray-100 dark:from-gray-800/20 dark:to-gray-900/40 rounded-xl border border-gray-100 dark:border-gray-800 hover-lift shadow-soft animate-fade-in delay-200">
-                <div className="w-10 h-10 flex items-center justify-center rounded-full bg-green-50 dark:bg-green-900/30">
-                  <Search className="text-green-500 dark:text-green-400 w-5 h-5" />
+              <div className="flex items-center gap-3 p-3 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
+                <div className="w-8 h-8 flex items-center justify-center rounded-lg bg-green-50 dark:bg-green-900/30">
+                  <Search className="text-green-600 dark:text-green-400 w-4 h-4" />
                 </div>
                 <div>
-                  <h3 className="font-medium text-gray-900 dark:text-gray-50 mb-1">Web Research</h3>
-                  <p className="text-gray-500 dark:text-gray-400 text-sm">Find information and extract data from websites.</p>
+                  <h3 className="font-medium text-gray-900 dark:text-gray-50 text-sm">Web Research</h3>
+                  <p className="text-gray-600 dark:text-gray-400 text-xs">Find information and extract data</p>
                 </div>
               </div>
               
-              <div className="flex items-center gap-4 p-4 bg-gradient-to-r from-gray-50 to-gray-100 dark:from-gray-800/20 dark:to-gray-900/40 rounded-xl border border-gray-100 dark:border-gray-800 hover-lift shadow-soft animate-fade-in delay-300">
-                <div className="w-10 h-10 flex items-center justify-center rounded-full bg-purple-50 dark:bg-purple-900/30">
-                  <Code className="text-purple-500 dark:text-purple-400 w-5 h-5" />
+              <div className="flex items-center gap-3 p-3 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
+                <div className="w-8 h-8 flex items-center justify-center rounded-lg bg-purple-50 dark:bg-purple-900/30">
+                  <Code className="text-purple-600 dark:text-purple-400 w-4 h-4" />
                 </div>
                 <div>
-                  <h3 className="font-medium text-gray-900 dark:text-gray-50 mb-1">Web Automation</h3>
-                  <p className="text-gray-500 dark:text-gray-400 text-sm">Fill forms, click buttons, and automate web tasks.</p>
+                  <h3 className="font-medium text-gray-900 dark:text-gray-50 text-sm">Web Automation</h3>
+                  <p className="text-gray-600 dark:text-gray-400 text-xs">Fill forms and automate tasks</p>
                 </div>
               </div>
             </div>
             
-            <div className="mt-10 text-sm text-gray-400 dark:text-gray-500 text-center">
-              Tip: Try asking to visit a specific website or perform web tasks.
+            <div className="mt-6 text-xs text-gray-500 dark:text-gray-500 text-center">
+              Ask me to visit a website or help with web tasks
             </div>
           </div>
         ) : (
@@ -273,14 +333,14 @@ const Chat: React.FC<ChatProps> = ({
                   onKeyDown={onKeyDown}
                   placeholder={isUserControlInProgress ? "User Control in progress..." : "Ask me to visit websites or help with web tasks..."}
                   disabled={isLoading || isUserControlInProgress}
-                  className="min-h-[48px] h-[48px] resize-none pl-12 py-3 flex items-center rounded-lg border-gray-300 dark:border-gray-700"
+                  className="min-h-[48px] h-[48px] resize-none pl-12 py-3 flex items-center rounded-lg border-gray-300 dark:border-gray-700 focus:border-primary focus:ring-1 focus:ring-primary/30 transition-colors duration-200"
                   rows={1}
                 />
               </div>
               <Button 
                 type="submit" 
                 disabled={isLoading || isThinking || isUserControlInProgress || (!input.trim() && !currentUpload)} 
-                className="h-[48px] btn-hover bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 dark:from-blue-600 dark:to-blue-700 dark:hover:from-blue-700 dark:hover:to-blue-800 text-white px-5 rounded-lg shadow-md hover:shadow-lg transition-all duration-300"
+                className="h-[48px] bg-primary hover:bg-primary/90 text-white px-4 rounded-lg shadow-sm hover:shadow-md transition-all duration-200"
               >
                 <Send className="h-4 w-4 mr-1" />
                 <span className="hidden sm:inline">Send</span>

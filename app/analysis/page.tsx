@@ -66,7 +66,8 @@ export default function AIChat() {
           queryDetails={queryDetails}
           currentQueryIndex={0}
           userInput={input}
-          sessionId={sessionId} 
+          sessionId={sessionId}
+          isThinking={isThinking}
         />
         </div>
       </div>
