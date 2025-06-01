@@ -92,15 +92,23 @@ npm install
 
 ### Configuration
 
-**1. Set your Nova Act API Key**
+**1. Set up Environment Variables**
 ```bash
-export NOVA_ACT_API_KEY="your_api_key_here"
-# or add to .env file
-echo "NOVA_ACT_API_KEY=your_api_key_here" >> .env
+# Copy the example environment file
+cd py-backend
+cp .env.example .env
+
+# Edit .env file and add your Nova Act API Key
+# NOVA_ACT_API_KEY=your_api_key_here
 ```
 
-**2. Configure Browser Settings**
-Edit `py-backend/app/libs/config/config.py`:
+**Alternative: Use system environment variables**
+```bash
+export NOVA_ACT_API_KEY="your_api_key_here"
+```
+
+**2. Configure Browser Settings (Optional)**
+All browser settings can be configured in the `.env` file or by editing `py-backend/app/libs/config/config.py`:
 ```python
 # Core browser settings
 BROWSER_HEADLESS = True  # Set to False for debugging

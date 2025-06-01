@@ -40,8 +40,9 @@ export function useAgentControl(sessionId?: string): UseAgentControlReturn {
       if (response.ok) {
         const data = await response.json();
         
-        // Set stop in progress state
+        // Set stop in progress state - blocking UI until completion
         setIsStopInProgress(true);
+        // Keep canStopAgent true until actually stopped
         
         toast({
           title: "Stop requested",
@@ -49,8 +50,10 @@ export function useAgentControl(sessionId?: string): UseAgentControlReturn {
         });
         
         // Status will be updated via ThoughtProcess events when actually stopped
+        // UI will remain blocked until we receive 'complete' or 'stopped' event
       } else {
         const errorData = await response.json();
+        setIsStopInProgress(false);  // Reset on error
         toast({
           title: "Failed to stop agent",
           description: errorData.detail || "Unable to stop agent.",
@@ -59,6 +62,7 @@ export function useAgentControl(sessionId?: string): UseAgentControlReturn {
       }
     } catch (error) {
       console.error('Failed to stop agent:', error);
+      setIsStopInProgress(false);  // Reset on error
       toast({
         title: "Error",
         description: "Failed to communicate with server.",

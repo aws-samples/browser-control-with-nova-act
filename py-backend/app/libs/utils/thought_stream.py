@@ -134,7 +134,7 @@ class ThoughtHandler:
                         ping_count = 0
                         yield format_sse({"type": "ping", "timestamp": f"{time.time()}"})
                     
-                    await asyncio.sleep(0.1)
+                    await asyncio.sleep(1.0)
             except Exception as e:
                 logger.error(f"Error in thought stream for session {session_id}: {e}")
                 yield format_sse({"type": "error", "message": str(e)})

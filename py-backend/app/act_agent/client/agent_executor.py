@@ -401,7 +401,7 @@ class AgentExecutor:
         )
         
         # Generate summary of work completed so far
-        summary_text = await self._generate_work_summary(messages, thinking_text, turn_count)
+        summary_text = await self._generate_work_summary(messages, thinking_text, turn_count, session_id)
         
         # Add stop context to thinking text
         thinking_text.append("\n[Task stopped by user request]")
@@ -413,7 +413,7 @@ class AgentExecutor:
             "answer": summary_text
         }
     
-    async def _generate_work_summary(self, messages: List[Dict], thinking_text: List[str], turn_count: int) -> str:
+    async def _generate_work_summary(self, messages: List[Dict], thinking_text: List[str], turn_count: int, session_id: str) -> str:
         """
         Generate a summary of work completed so far based on conversation history.
         
@@ -421,6 +421,7 @@ class AgentExecutor:
             messages: Current conversation messages
             thinking_text: Accumulated reasoning text  
             turn_count: Number of turns completed
+            session_id: Current session identifier
             
         Returns:
             str: Summary of work completed

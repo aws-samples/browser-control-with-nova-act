@@ -10,7 +10,7 @@
     "kill-port": "node -e \"try { process.kill(process.env.PORT_PID || require('child_process').execSync('lsof -t -i:8000').toString().trim()); console.log('Port 8000 released'); } catch(e) { console.log('Port 8000 was not in use'); }\"",
     "client-dev": "NODE_OPTIONS='--no-warnings' node node_modules/next/dist/bin/next dev",
     "client-start": "NODE_OPTIONS='--no-warnings' node node_modules/next/dist/bin/next start",
-    "server-dev": "npm run kill-port && cd py-backend && uvicorn app.app:app --host 0.0.0.0 --port 8000 --reload",
+    "server-dev": "npm run kill-port && cd py-backend && uvicorn app.app:app --host 0.0.0.0 --port 8000",
     "server-start": "cd py-backend && uvicorn app.app:app --host 0.0.0.0 --port 8000"
   },
   "engines": {

@@ -22,6 +22,7 @@ interface ChatState {
   input: string;
   isLoading: boolean;
   isThinking: boolean;
+  isStopping: boolean;
   currentUpload: FileUpload | null;
   isUploading: boolean;
   queryDetails: AnalyzeAPIResponse[];
@@ -74,6 +75,7 @@ export const useChat = (selectedModel: string, selectedRegion: string): UseChatR
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isThinking, setIsThinking] = useState(false);
+  const [isStopping, setIsStopping] = useState(false);
   const [currentUpload, setCurrentUpload] = useState<FileUpload | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [queryDetails, setQueryDetails] = useState<AnalyzeAPIResponse[]>([]);
@@ -106,6 +108,7 @@ export const useChat = (selectedModel: string, selectedRegion: string): UseChatR
         // Clear session-related state
         setSessionId(undefined);
         setIsThinking(false);
+        setIsStopping(false);
         setMessages([]);
         setQueryDetails([]);
         thinkingStartTime.current = null;
@@ -122,16 +125,16 @@ export const useChat = (selectedModel: string, selectedRegion: string): UseChatR
 
   const stopAgent = useCallback(() => {
     if (isThinking) {
-      setIsThinking(false);
-      thinkingStartTime.current = null;
+      // Set stopping state to show graceful shutdown message
+      setIsStopping(true);
       
-      // Dispatch event to stop any ongoing tasks
+      // Dispatch event to indicate stop request initiated
       dispatchEvent.taskStatusUpdate({
-        status: 'stopped',
+        status: 'stop_requested',
         sessionId: sessionId || ''
       });
       
-      logger.info('Agent task stopped');
+      logger.info('Agent stop requested - graceful shutdown initiated');
     }
   }, [isThinking, sessionId]);
 
@@ -149,6 +152,22 @@ export const useChat = (selectedModel: string, selectedRegion: string): UseChatR
   }, [stopAgent]);
 
   useEffect(() => {
+    // Subscribe to task status updates
+    const unsubscribeTaskStatus = subscribeToEvent.taskStatusUpdate(({ status }) => {
+      if (status === 'start') {
+        setIsThinking(true);
+        setIsStopping(false);
+        thinkingStartTime.current = Date.now();
+      } else if (status === 'stopping') {
+        setIsStopping(true);
+        // Keep isThinking true to maintain blocking state
+      } else if (status === 'complete' || status === 'stopped') {
+        setIsThinking(false);
+        setIsStopping(false);
+        thinkingStartTime.current = null;
+      }
+    });
+
     const unsubscribeVisualization = subscribeToEvent.visualizationReady(({ chartData, chartTitle }) => {
       if (chartData) {
         const processingTime = calcProcessingTime(thinkingStartTime);
@@ -232,16 +251,6 @@ export const useChat = (selectedModel: string, selectedRegion: string): UseChatR
       }
     });
     
-    const unsubscribeTaskStatus = subscribeToEvent.taskStatusUpdate(({ status, sessionId: eventSessionId }) => {
-      if (eventSessionId === sessionId) {
-        if (status === 'start') {
-          // Timer is already started in handleSubmit
-          setIsThinking(true);
-        } else if (status === 'complete') {
-          resetThinkingTimer(setIsThinking, thinkingStartTime);
-        }
-      }
-    });
 
     // Session cleanup on page unload
     const handleBeforeUnload = async () => {
@@ -262,10 +271,10 @@ export const useChat = (selectedModel: string, selectedRegion: string): UseChatR
     }
     
     return () => {
+      unsubscribeTaskStatus();
       unsubscribeVisualization();
       unsubscribeThoughtCompletion();
       unsubscribeThoughtStreamComplete();
-      unsubscribeTaskStatus();
       
       if (sessionId) {
         window.removeEventListener('beforeunload', handleBeforeUnload);
@@ -614,6 +623,7 @@ export const useChat = (selectedModel: string, selectedRegion: string): UseChatR
     setInput("");
     setCurrentUpload(null);
     setIsThinking(false);
+    setIsStopping(false);
     setSessionId(undefined);
     thinkingStartTime.current = null;
         
@@ -630,7 +640,8 @@ export const useChat = (selectedModel: string, selectedRegion: string): UseChatR
     messages,
     input,
     isLoading,
-    isThinking, 
+    isThinking,
+    isStopping,
     currentUpload,
     isUploading,
     queryDetails,

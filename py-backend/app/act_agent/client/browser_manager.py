@@ -8,8 +8,8 @@ import time
 from contextlib import AsyncExitStack
 from typing import Optional, Dict, Any
 
-from mcp import ClientSession, StdioServerParameters
-from mcp.client.stdio import stdio_client
+from mcp import ClientSession
+from mcp.client.streamable_http import streamablehttp_client
 
 logger = logging.getLogger("browser_manager")
 
@@ -49,45 +49,30 @@ class BrowserManager:
             
         return json.dumps(simplified, indent=2)
 
-    async def connect_to_server(self, server_script_path: str):
-        env = os.environ.copy()
-        if self.server_config:
-            env["BROWSER_CONFIG"] = json.dumps(self.server_config)
+    async def connect_to_server(self, server_url: str = None):
+        """
+        Connect to Nova Act server using streamable HTTP transport.
         
-        command = "python" if server_script_path.endswith('.py') else "node"
-        server_params = StdioServerParameters(
-            command=command, 
-            args=[server_script_path], 
-            env=env
+        Args:
+            server_url: URL of the Nova Act server (e.g., 'http://localhost:8000/mcp/')
+        """
+        # Use default server URL if not provided
+        if not server_url:
+            server_url = "http://localhost:8001/mcp/"
+        
+        logger.info(f"Connecting to Nova Act server via streamable HTTP: {server_url}")
+        
+        # Initialize MCP client with streamable HTTP
+        headers = {}
+        if self.session_id:
+            headers["X-Session-ID"] = self.session_id
+            logger.info(f"Setting X-Session-ID header: {self.session_id}")
+        
+        transport = await self.exit_stack.enter_async_context(
+            streamablehttp_client(server_url, headers=headers)
         )
-        
-        # Start server process
-        self._server_process = subprocess.Popen(
-            [command, server_script_path],
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            bufsize=0,
-            start_new_session=True 
-        )
-        
-        # Register process with session ID instead of generated ID
-        try:
-            from app.app import mcp_processes
-            
-            # Use the provided session_id or fall back to generated ID
-            server_id = self.server_config.get("session_id") or f"nova-act-server-{id(self)}"
-            mcp_processes[server_id] = self._server_process
-            logger.info(f"Registered server process with ID: {server_id}")
-            
-        except ImportError:
-            import atexit
-            atexit.register(self._terminate_server)
-
-        # Initialize MCP client
-        stdio_transport = await self.exit_stack.enter_async_context(stdio_client(server_params))
-        self.stdio, self.write = stdio_transport
-        self.session = await self.exit_stack.enter_async_context(ClientSession(self.stdio, self.write))
+        read_stream, write_stream, _ = transport
+        self.session = await self.exit_stack.enter_async_context(ClientSession(read_stream, write_stream))
         await self.session.initialize()
 
         # List available tools
@@ -95,61 +80,11 @@ class BrowserManager:
         logger.info(f"Connected to server with tools: {[tool.name for tool in response.tools]}")
 
     def _terminate_server(self):
-        if not hasattr(self, '_server_process') or not self._server_process:
-            return
-            
-        try:
-            if self._server_process.poll() is not None:
-                return  # Already terminated
-                
-            print("\nTerminating server process...")
-            
-            # Remove from global registry if applicable
-            try:
-                from app.app import mcp_processes
-                
-                server_id = None
-                for sid, proc in list(mcp_processes.items()):
-                    if proc == self._server_process:
-                        server_id = sid
-                        break
-                        
-                if server_id and server_id in mcp_processes:
-                    print(f"Removing server process {server_id} from global registry")
-                    del mcp_processes[server_id]
-            except ImportError:
-                pass
-                
-            # Unix-specific termination (handles process groups)
-            if hasattr(os, 'killpg'):
-                try:
-                    pgid = os.getpgid(self._server_process.pid)
-                    os.killpg(pgid, signal.SIGTERM)
-                    
-                    for i in range(10): 
-                        if self._server_process.poll() is not None:
-                            break 
-                        time.sleep(0.1)
-                            
-                    if self._server_process.poll() is None:
-                        os.killpg(pgid, signal.SIGKILL)
-                            
-                except (ProcessLookupError, PermissionError) as e:
-                    print(f"Process already terminated: {e}")
-            else:  # Windows
-                self._server_process.terminate()
-                
-                try:
-                    self._server_process.wait(timeout=3)
-                except subprocess.TimeoutExpired:
-                    if self._server_process.poll() is None:
-                        self._server_process.kill()
-                        
-            print("Server process terminated.")
-        except Exception as e:
-            print(f"Error terminating server process: {e}")
-            import traceback
-            traceback.print_exc()
+        """
+        No server process termination needed for HTTP transport.
+        The Nova Act server runs independently.
+        """
+        logger.info("HTTP transport - no server process to terminate")
 
     async def close_browser(self):
         if not self.session or not self.browser_initialized:
@@ -163,9 +98,22 @@ class BrowserManager:
             
             if hasattr(self, 'session'):
                 try:
+                    # Force close session first
+                    if hasattr(self.session, 'close'):
+                        await self.session.close()
+                except Exception as e:
+                    print(f"Error closing session: {e}")
+                
+                try:
+                    # Then close the exit stack
                     await self.exit_stack.aclose()
                 except Exception as e:
                     print(f"Error closing MCP client: {e}")
+                    # Try alternative cleanup
+                    try:
+                        self.exit_stack._async_cm_stack.clear()
+                    except:
+                        pass
         except Exception as e:
             print(f"Error closing browser: {e}")
         finally:

@@ -1,9 +1,8 @@
-from fastapi import FastAPI, Request, BackgroundTasks, HTTPException
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.api_routes import thought_stream, router, mcp_servers, browser_control, agent_control
-from app.libs.utils.utils import PathManager, setup_paths, register_session_and_thought_handler
-from app.libs.utils.thought_stream import thought_handler
-from app.libs.config.config import BROWSER_HEADLESS, BROWSER_USER_DATA_DIR
+from app.libs.utils.utils import setup_paths, register_session_and_thought_handler
+from app.libs.config.config import BROWSER_USER_DATA_DIR
 from app.libs.utils.shutdown_manager import shutdown_manager
 from app.libs.core.agent_manager import get_agent_manager
 from app.libs.data.session_manager import configure_session_manager
@@ -91,6 +90,18 @@ async def startup_event():
     try:
         logger.info("Initializing Nova Act Agent on server startup...")
         
+        # Check and setup browser profile path configuration
+        if BROWSER_USER_DATA_DIR == "/path/to/chromium/profile":
+            logger.info("Browser profile path not configured. Creating default base directory.")
+            default_base_dir = os.path.expanduser("~/.nova_browser_profiles/base")
+            os.makedirs(default_base_dir, exist_ok=True)
+            os.environ["NOVA_BROWSER_USER_DATA_DIR"] = default_base_dir
+            logger.info(f"Created and set browser base profile directory: {default_base_dir}")
+        else:
+            # Ensure the configured directory exists
+            os.makedirs(BROWSER_USER_DATA_DIR, exist_ok=True)
+            logger.info(f"Using browser base profile directory: {BROWSER_USER_DATA_DIR}")
+        
         # Configure session manager
         session_manager = configure_session_manager(
             store_type="file",  # Use file store for persistence
@@ -103,6 +114,10 @@ async def startup_event():
         shutdown_manager.register_mcp_processes(mcp_processes)
         shutdown_manager.register_agent_manager(get_agent_manager())
         shutdown_manager.register_session_manager(session_manager)
+        
+        # Register profile manager for cleanup
+        from app.libs.utils.profile_manager import profile_manager
+        shutdown_manager.register_profile_manager(profile_manager)
         
         # Setup signal handlers and exit handler
         shutdown_manager.setup_signal_handlers()
@@ -121,12 +136,11 @@ async def startup_event():
         
         try:
             server_path = paths["server_path"]
-            logger.info(f"Starting Nova Act Server from {server_path}")
+            logger.info(f"Starting Nova Act Server (streamable HTTP) from {server_path}")
             
-            # mcp_processes is already defined globally so no need to declare again
+            # Start Nova Act server with streamable HTTP transport on port 8001
             server_process = subprocess.Popen(
-                [sys.executable, server_path],
-                stdin=subprocess.PIPE,
+                [sys.executable, server_path, "--transport", "streamable-http", "--port", "8001"],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE, 
                 bufsize=0,
@@ -134,9 +148,24 @@ async def startup_event():
             )
             
             mcp_processes["nova-act-server-main"] = server_process
-            logger.info(f"Nova Act Server started with PID {server_process.pid}")
+            logger.info(f"Nova Act Server (streamable HTTP) started with PID {server_process.pid}")
             
-            await asyncio.sleep(1)
+            # Wait a bit and check if server started successfully
+            await asyncio.sleep(2)  
+            
+            # Check if process is still running
+            if server_process.poll() is not None:
+                # Process has terminated, read error output
+                stdout, stderr = server_process.communicate()
+                error_msg = f"Nova Act Server failed to start. Return code: {server_process.returncode}"
+                if stderr:
+                    error_msg += f"\nStderr: {stderr.decode()}"
+                if stdout:
+                    error_msg += f"\nStdout: {stdout.decode()}"
+                logger.error(error_msg)
+                raise RuntimeError(error_msg)
+            else:
+                logger.info("Nova Act Server is running successfully")
         except Exception as e:
             error_msg = f"Failed to start Nova Act Server: {str(e)}"
             logger.error(error_msg)
@@ -152,4 +181,4 @@ async def startup_event():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("app.app:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("app.app:app", host="0.0.0.0", port=8000, reload=False)

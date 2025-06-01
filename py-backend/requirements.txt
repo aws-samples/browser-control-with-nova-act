@@ -3,10 +3,12 @@ mcp
 asyncio
 pydantic
 typing-extensions
-fastmcp
+fastmcp>=2.5.2
 fastapi
 uvicorn
 fastapi-cors
 setuptools
 nova-act
 playwright
+python-dotenv
+psutil

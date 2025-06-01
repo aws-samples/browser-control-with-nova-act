@@ -6,19 +6,28 @@ import traceback
 from typing import Dict, Any, Optional, Tuple
 from nova_act import NovaAct
 from nova_act_config import DEFAULT_BROWSER_SETTINGS
+from app.libs.utils.profile_manager import profile_manager
 
 logging.basicConfig(level=logging.WARNING)
 logger = logging.getLogger("browser_controller")
 
 class BrowserController:
-    def __init__(self):
+    def __init__(self, session_id: str = None):
         self.nova = None
+        self.session_id = session_id
         self.api_key = os.environ.get("NOVA_ACT_API_KEY")
         self.screenshots_dir = os.path.join(tempfile.gettempdir(), "nova_browser_screenshots")
         os.makedirs(self.screenshots_dir, exist_ok=True)
     
     def is_initialized(self) -> bool:
-        return self.nova is not None and hasattr(self.nova, 'page')
+        if self.nova is None:
+            return False
+        try:
+            # Check if nova client is properly started and page is accessible
+            return hasattr(self.nova, 'page') and self.nova.page is not None
+        except Exception:
+            # If accessing page throws an error, the client is not properly initialized
+            return False
     
     def normalize_url(self, url: str) -> str:
         if url == "about:blank":
@@ -28,23 +37,49 @@ class BrowserController:
         return url
 
     def initialize_browser(self, headless: bool = True, starting_url: str = None) -> Tuple[bool, Optional[Dict[str, Any]], Optional[str]]:
-        print(f"DEBUG: Initializing browser with headless={headless}")
+        logger.info(f"[SESSION {self.session_id}] Initializing browser with headless={headless}")
+        logger.info(f"[SESSION {self.session_id}] Profile dir will be: {profile_dir if 'profile_dir' in locals() else 'TBD'}")
+        logger.info(f"[SESSION {self.session_id}] API key present: {bool(self.api_key)}")
         if not self.api_key:
             error_msg = "Nova Act API key not found in environment variables"
             logger.error(error_msg)
             return False, None, error_msg
+        
+        # Clean up any existing nova instance
+        if self.nova is not None:
+            try:
+                self.nova.stop()
+                logger.info("Stopped existing Nova Act instance")
+            except Exception as e:
+                logger.warning(f"Error stopping existing Nova Act instance: {e}")
+            finally:
+                self.nova = None
             
         try:
             url = starting_url or DEFAULT_BROWSER_SETTINGS.get("start_url", "https://www.google.com")
             url = self.normalize_url(url)
             
+            # Get appropriate profile directory for this session
+            base_profile_dir = DEFAULT_BROWSER_SETTINGS.get("user_data_dir")
+            clone_enabled = DEFAULT_BROWSER_SETTINGS.get("clone_user_data_dir", True)  # Default to True for session isolation
+            
+            if self.session_id and clone_enabled:
+                profile_dir = profile_manager.get_profile_for_session(
+                    self.session_id, 
+                    base_profile_dir, 
+                    clone_enabled=True
+                )
+                logger.info(f"Session {self.session_id}: Using cloned profile directory: {profile_dir}")
+            else:
+                profile_dir = base_profile_dir
+                logger.info(f"Session {self.session_id}: Using base profile directory: {profile_dir}")
+            
             self.nova = NovaAct(
                 starting_page=url,
                 nova_act_api_key=self.api_key,
                 headless=headless,
-                user_data_dir=DEFAULT_BROWSER_SETTINGS.get("user_data_dir"),
-                clone_user_data_dir=DEFAULT_BROWSER_SETTINGS.get("clone_user_data_dir", False),
-                #quiet=DEFAULT_BROWSER_SETTINGS.get("quiet", False),
+                user_data_dir=profile_dir,
+                clone_user_data_dir=False,  # We handle cloning ourselves now
                 screen_width=1600,
                 screen_height=1200,
                 logs_directory=DEFAULT_BROWSER_SETTINGS.get("logs_directory"),
@@ -80,8 +115,17 @@ class BrowserController:
             return True, screenshot_data, None
             
         except Exception as e:
+            import traceback
             error_msg = str(e)
-            logger.error(f"Error initializing browser: {error_msg}")
+            logger.error(f"Error initializing browser for session {self.session_id}: {error_msg}")
+            logger.error(f"Full traceback: {traceback.format_exc()}")
+            
+            # Log key debugging info
+            logger.error(f"API key present: {bool(self.api_key)}")
+            logger.error(f"Profile dir: {profile_dir if 'profile_dir' in locals() else 'Not set'}")
+            logger.error(f"URL: {url}")
+            logger.error(f"Session ID: {self.session_id}")
+            
             return False, None, error_msg
 
     def go_to_url(self, url: str, wait_until: str = "networkidle", timeout: int = None) -> Dict[str, Any]:
@@ -216,15 +260,16 @@ class BrowserController:
             logger.error(f"Error getting page content: {str(e)}")
             return "Error getting content"
     
+
     def close(self) -> bool:
         """Close browser and clean up all resources"""
         if not hasattr(self, 'nova') or self.nova is None:
             return True
         
         try:
-            logger.info("Closing browser instance")
+            logger.info(f"Closing browser instance for session {self.session_id}")
             
-            # Use NovaAct's stop() method to properly close browser
+            # Step 1: Try to close gracefully via NovaAct's stop() method
             if hasattr(self.nova, 'stop'):
                 try:
                     self.nova.stop()
@@ -232,16 +277,62 @@ class BrowserController:
                 except Exception as e:
                     logger.warning(f"Error calling nova.stop(): {e}")
             
-            # Clear the nova instance reference
+            # Step 2: Force close any remaining browser processes
+            try:
+                import psutil
+                import os
+                
+                current_pid = os.getpid()
+                parent_process = psutil.Process(current_pid)
+                
+                # Find all Chrome/Chromium child processes
+                chrome_processes = []
+                for child in parent_process.children(recursive=True):
+                    try:
+                        if child.name().lower() in ['chrome', 'chromium', 'google chrome']:
+                            chrome_processes.append(child)
+                    except (psutil.NoSuchProcess, psutil.AccessDenied):
+                        continue
+                
+                # Terminate Chrome processes
+                for proc in chrome_processes:
+                    try:
+                        logger.info(f"Terminating Chrome process {proc.pid}")
+                        proc.terminate()
+                    except (psutil.NoSuchProcess, psutil.AccessDenied) as e:
+                        logger.warning(f"Could not terminate process {proc.pid}: {e}")
+                
+                # Wait a bit and kill if still running
+                import time
+                time.sleep(0.5)
+                
+                for proc in chrome_processes:
+                    try:
+                        if proc.is_running():
+                            logger.warning(f"Force killing Chrome process {proc.pid}")
+                            proc.kill()
+                    except (psutil.NoSuchProcess, psutil.AccessDenied):
+                        continue
+                        
+            except ImportError:
+                logger.warning("psutil not available for process cleanup")
+            except Exception as e:
+                logger.error(f"Error in process cleanup: {e}")
+            
+            # Step 3: Clear the nova instance reference
             self.nova = None
             
-            # Force garbage collection
+            # Step 4: Clean up session profile if using cloned profiles
+            if self.session_id:
+                profile_manager.cleanup_session_profile(self.session_id)
+            
+            # Step 5: Force garbage collection
             import gc
             gc.collect()
             
-            logger.info("Browser resources cleaned up successfully")
+            logger.info(f"Browser resources cleaned up successfully for session {self.session_id}")
             return True
             
         except Exception as e:
-            logger.error(f"Error closing browser: {e}")
+            logger.error(f"Error closing browser for session {self.session_id}: {e}")
             return False

@@ -18,6 +18,7 @@ export default function AIChat() {
     input,
     isLoading,
     isThinking,
+    isStopping,
     currentUpload,
     queryDetails,
     sessionId, 
@@ -50,6 +51,7 @@ export default function AIChat() {
           models={models}
           regions={regions}
           isThinking={isThinking || isUserControlInProgress}
+          isStopping={isStopping}
           isUserControlInProgress={isUserControlInProgress}
           fileInputRef={fileInputRef}
           onInputChange={actions.handleInputChange}

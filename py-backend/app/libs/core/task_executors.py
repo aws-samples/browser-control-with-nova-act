@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import Dict, Any, Optional, List
 
 from app.libs.core.agent_manager import AgentManager
-from app.libs.utils.utils import setup_paths
+# removed setup_paths import as we now use HTTP transport
 from app.libs.utils.decorators import log_thought
 from app.libs.core.browser_utils import BrowserUtils, BedrockClient
 from app.libs.config.prompts import get_supervisor_prompt, SUPERVISOR_TOOL
@@ -58,13 +58,10 @@ class NavigationExecutor(BaseTaskExecutor):
     async def execute(self, classification: Dict[str, Any], session_id: str, model_id: str = None, region: str = None) -> Dict[str, Any]:
         start_time = time.time()
         try:
-            # Setup and initialize
-            paths = setup_paths()
-            server_path = paths["server_path"]
-            
+            # Initialize browser manager with HTTP connection
             browser_manager = await self.agent_manager.get_or_create_browser_manager(
                 session_id=session_id,
-                server_path=server_path,
+                server_url="http://localhost:8001/mcp/",  # Nova Act server URL
                 headless=BROWSER_HEADLESS,  # Use global configuration
                 model_id=model_id or self.model_id,
                 region=region or self.region
@@ -178,13 +175,10 @@ class ActionExecutor(BaseTaskExecutor):
         browser_manager = None
         
         try:
-            # Setup and initialize
-            paths = setup_paths()
-            server_path = paths["server_path"]
-            
+            # Initialize browser manager with HTTP connection
             browser_manager = await self.agent_manager.get_or_create_browser_manager(
                 session_id=session_id,
-                server_path=server_path,
+                server_url="http://localhost:8001/mcp/",  # Nova Act server URL
                 headless=BROWSER_HEADLESS,  # Use global configuration
                 model_id=model_id or self.model_id,
                 region=region or self.region
@@ -363,12 +357,10 @@ class AgentOrchestrator(BaseTaskExecutor):
                 })
                 await task_supervisor.conversation_store.save(session_id, conversation_messages)
             
-            # Setup browser agent
-            paths = setup_paths()
-            server_path = paths["server_path"]
+            # Initialize browser manager with HTTP connection
             browser_manager = await self.agent_manager.get_or_create_browser_manager(
                 session_id=session_id,
-                server_path=server_path,
+                server_url="http://localhost:8001/mcp/",  # Nova Act server URL
                 headless=BROWSER_HEADLESS,
                 model_id=model_id or self.model_id,
                 region=region or self.region
@@ -381,10 +373,19 @@ class AgentOrchestrator(BaseTaskExecutor):
             turn_count = 0
             final_answer = ""
             
-            
             while True:
                 # Check for stop request at beginning of each iteration
                 if self.agent_manager.is_agent_stop_requested(session_id):
+                    # Send stopping state notification to UI
+                    log_thought(
+                        session_id=session_id,
+                        type_name="task_status",
+                        category="status",
+                        node="System",
+                        content="Agent is gracefully stopping - please wait...",
+                        technical_details={"status": "stopping"}
+                    )
+                    
                     # Handle graceful stop with early termination logic
                     final_answer = await self._handle_early_stop(
                         session_id=session_id,
@@ -491,6 +492,15 @@ class AgentOrchestrator(BaseTaskExecutor):
                                 tool_result_message = result["message"]
                                 conversation_messages.append(tool_result_message)
                                 await task_supervisor.conversation_store.save(session_id, conversation_messages)
+                                
+                                # Log that we're continuing to get supervisor's analysis of the results
+                                log_thought(
+                                    session_id=session_id,
+                                    type_name="reasoning",
+                                    category="analysis",
+                                    node="Supervisor",
+                                    content="Analyzing agent results to provide comprehensive answer..."
+                                )
                     
                 elif response['stopReason'] == 'end_turn':
                     # Direct answer from supervisor
@@ -513,7 +523,23 @@ class AgentOrchestrator(BaseTaskExecutor):
                         node="Supervisor",
                         content=f"Conversation ended with stop reason: {response['stopReason']}"
                     )
-                    final_answer = response['output']['message']['content'][0]['text'] if 'text' in response['output']['message']['content'][0] else "Task completed."
+                    
+                    # Try to extract the actual content or generate a meaningful summary
+                    content_text = ""
+                    if response['output']['message']['content'] and len(response['output']['message']['content']) > 0:
+                        if 'text' in response['output']['message']['content'][0]:
+                            content_text = response['output']['message']['content'][0]['text']
+                    
+                    # If we have meaningful content, use it; otherwise generate a summary
+                    if content_text and len(content_text.strip()) > 10 and not content_text.strip().lower().startswith("action completed"):
+                        final_answer = content_text
+                    else:
+                        # Generate a summary based on conversation history
+                        final_answer = await self._generate_final_summary(
+                            conversation_messages, 
+                            model_id or self.model_id, 
+                            session_id
+                        )
                     
                     # Add final answer to conversation
                     assistant_message = {
@@ -621,21 +647,38 @@ class AgentOrchestrator(BaseTaskExecutor):
         return context
     
     async def _generate_final_summary(self, messages, model_id, session_id):
-        """Generate final summary when max turns are reached."""
+        """Generate final summary when max turns are reached or incomplete responses."""
         log_thought(
             session_id=session_id,
-            type_name="warning",
-            category="limit",
+            type_name="summary_generation",
+            category="analysis",
             node="Supervisor",
-            content=f"Reached maximum turns limit ({MAX_SUPERVISOR_TURNS})"
+            content="Generating comprehensive summary of completed tasks..."
         )
         
+        # Extract agent results from conversation for better summary
+        agent_results = []
+        for msg in messages:
+            if msg.get("role") == "user" and "content" in msg:
+                for content_item in msg["content"]:
+                    if isinstance(content_item, dict) and "toolResult" in content_item:
+                        tool_result = content_item["toolResult"]
+                        if "content" in tool_result:
+                            for result_content in tool_result["content"]:
+                                if isinstance(result_content, dict) and "json" in result_content:
+                                    json_data = result_content["json"]
+                                    if "answer" in json_data:
+                                        agent_results.append(json_data["answer"])
+        
         # Generate final summary
+        summary_prompt = "Please provide a comprehensive summary of what you've accomplished. "
+        if agent_results:
+            summary_prompt += f"The following results were obtained from agent executions: {' | '.join(agent_results[:3])}"
+        summary_prompt += " Provide a clear, detailed answer to the user's original request based on all available information."
+        
         summary_request = {
             "role": "user", 
-            "content": [{
-                "text": "Please provide a final summary of what you've accomplished and what answer you can provide to the original request."
-            }]
+            "content": [{"text": summary_prompt}]
         }
         messages.append(summary_request)
         
@@ -643,13 +686,25 @@ class AgentOrchestrator(BaseTaskExecutor):
         from app.libs.data.conversation_manager import prepare_messages_for_bedrock
         filtered_messages = prepare_messages_for_bedrock(messages)
         
-        final_response = self.bedrock_client.converse(
-            messages=filtered_messages,
-            system_prompt=get_supervisor_prompt(),
-            tools=SUPERVISOR_TOOL
-        )
+        try:
+            final_response = self.bedrock_client.converse(
+                messages=filtered_messages,
+                system_prompt=get_supervisor_prompt(),
+                tools=None  # No tools for final summary
+            )
+            
+            if 'output' in final_response and 'message' in final_response['output']:
+                content = final_response['output']['message']['content']
+                if content and len(content) > 0 and 'text' in content[0]:
+                    return content[0]['text']
+        except Exception as e:
+            logger.error(f"Error generating final summary: {e}")
         
-        return final_response['output']['message']['content'][0]['text']
+        # Fallback summary if API call fails
+        if agent_results:
+            return f"I completed the requested tasks and obtained the following results: {' | '.join(agent_results)}. Please let me know if you need more specific information about any of these findings."
+        else:
+            return "I worked on your request but encountered some issues in generating a complete response. Please let me know if you'd like me to try again or if you need clarification on any specific aspect."
 
     async def _execute_mission(self, browser_manager, agent_executor, mission, task_context, tool_use_id, session_id):
         """Execute a specific mission using the agent executor and return results in tool_result format."""
@@ -795,6 +850,16 @@ class AgentOrchestrator(BaseTaskExecutor):
                 "turn_count": turn_count,
                 "reason": "user_request"
             }
+        )
+        
+        # Send explicit task_status stopped event
+        log_thought(
+            session_id=session_id,
+            type_name="task_status",
+            category="status",
+            node="System",
+            content="Agent stopped by user request - Stop button now inactive",
+            technical_details={"status": "stopped"}
         )
         
         # Generate comprehensive summary of work completed so far

@@ -23,6 +23,7 @@ interface ChatProps {
   models: Model[];
   regions: { id: string; name: string }[];
   isThinking: boolean;
+  isStopping?: boolean;
   isUserControlInProgress?: boolean;
   fileInputRef: React.RefObject<HTMLInputElement>;
   onInputChange: (event: React.ChangeEvent<HTMLTextAreaElement>) => void;
@@ -35,23 +36,53 @@ interface ChatProps {
   onReset?: () => void;
 }
 
-const ThinkingIndicator: React.FC = () => {
+interface ThinkingIndicatorProps {
+  isStopping?: boolean;
+}
+
+const ThinkingIndicator: React.FC<ThinkingIndicatorProps> = ({ isStopping = false }) => {
     return (
-      <div className="flex flex-col space-y-3 p-4 bg-gradient-to-r from-blue-50 via-gray-50 to-gray-100 dark:from-blue-950/30 dark:via-gray-800/80 dark:to-gray-900 rounded-lg border border-blue-100 dark:border-blue-900/50 shadow-soft animate-expand-in">
+      <div className={`flex flex-col space-y-3 p-4 rounded-lg border shadow-soft animate-expand-in ${
+        isStopping 
+          ? "bg-gradient-to-r from-orange-50 via-yellow-50 to-orange-100 dark:from-orange-950/30 dark:via-yellow-800/80 dark:to-orange-900 border-orange-100 dark:border-orange-900/50"
+          : "bg-gradient-to-r from-blue-50 via-gray-50 to-gray-100 dark:from-blue-950/30 dark:via-gray-800/80 dark:to-gray-900 border-blue-100 dark:border-blue-900/50"
+      }`}>
         <div className="flex items-center justify-between">
           <div className="text-gray-700 dark:text-gray-200 font-medium flex items-center">
             <div className="relative mr-3">
-              <div className="w-6 h-6 border-2 border-primary/30 border-t-primary rounded-full animate-spin"></div>
-              <div className="absolute top-1/2 left-1/2 w-2 h-2 bg-primary rounded-full transform -translate-x-1/2 -translate-y-1/2"></div>
+              <div className={`w-6 h-6 border-2 rounded-full animate-spin ${
+                isStopping 
+                  ? "border-orange-300 border-t-orange-600 dark:border-orange-700 dark:border-t-orange-400"
+                  : "border-primary/30 border-t-primary"
+              }`}></div>
+              <div className={`absolute top-1/2 left-1/2 w-2 h-2 rounded-full transform -translate-x-1/2 -translate-y-1/2 ${
+                isStopping 
+                  ? "bg-orange-600 dark:bg-orange-400"
+                  : "bg-primary"
+              }`}></div>
             </div>
-            <span className="font-semibold">Working on it...</span>
+            <span className="font-semibold">
+              {isStopping ? "Gracefully stopping agent..." : "Working on it..."}
+            </span>
           </div>
         </div>
         
         <div className="space-y-2">
-          <div className="h-2 bg-gray-200 dark:bg-gray-600 rounded-full w-3/4 animate-pulse"></div>
-          <div className="h-2 bg-gray-200 dark:bg-gray-600 rounded-full w-1/2 animate-pulse"></div>
-          <div className="h-2 bg-gray-200 dark:bg-gray-600 rounded-full w-5/6 animate-pulse"></div>
+          <div className={`h-2 rounded-full w-3/4 animate-pulse ${
+            isStopping 
+              ? "bg-orange-200 dark:bg-orange-600"
+              : "bg-gray-200 dark:bg-gray-600"
+          }`}></div>
+          <div className={`h-2 rounded-full w-1/2 animate-pulse ${
+            isStopping 
+              ? "bg-orange-200 dark:bg-orange-600"
+              : "bg-gray-200 dark:bg-gray-600"
+          }`}></div>
+          <div className={`h-2 rounded-full w-5/6 animate-pulse ${
+            isStopping 
+              ? "bg-orange-200 dark:bg-orange-600"
+              : "bg-gray-200 dark:bg-gray-600"
+          }`}></div>
         </div>
       </div>
     );
@@ -67,6 +98,7 @@ const Chat: React.FC<ChatProps> = ({
   models,
   regions,
   isThinking,
+  isStopping = false,
   isUserControlInProgress = false,
   fileInputRef,  
   onInputChange,
@@ -301,7 +333,7 @@ const Chat: React.FC<ChatProps> = ({
             ))}
             {isThinking && (
               <div className="animate-fade-in-up">
-                <ThinkingIndicator />
+                <ThinkingIndicator isStopping={isStopping} />
               </div>
             )}
             <div ref={messagesEndRef} className="h-4" />

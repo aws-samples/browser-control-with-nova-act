@@ -3,27 +3,111 @@ import sys
 import asyncio
 import logging
 import traceback
-import base64
 import json
 import signal
 import concurrent.futures
-from typing import Dict, Any, Optional, List
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
+from typing import Dict, Any, Optional
 from fastmcp import FastMCP
+from fastmcp.server.dependencies import get_http_headers
 from browser_controller import BrowserController
 from nova_act_config import DEFAULT_BROWSER_SETTINGS
 
+# Session-based ThreadPools for Nova Act operations (recommended by Nova Act SDK)
+_session_thread_pools = {}  # Dict[session_id, ThreadPoolExecutor]
+_max_concurrent_browsers = 10  # Maximum concurrent browser sessions
+
+
+# Load environment variables from .env file
+try:
+    from dotenv import load_dotenv
+    # Find .env file in py-backend directory
+    env_path = Path(__file__).parent.parent.parent.parent.parent / ".env"
+    if env_path.exists():
+        load_dotenv(env_path)
+        logging.info(f"Loaded .env from: {env_path}")
+    else:
+        logging.warning(f".env file not found at: {env_path}")
+except ImportError:
+    logging.warning("python-dotenv not available, skipping .env file loading")
+
 logging.basicConfig(
-    level=logging.INFO,
-    format='[MCP] %(message)s',
+    level=logging.DEBUG,
+    format='[MCP] %(levelname)s - %(name)s - %(message)s',
     stream=sys.stderr
 )
 logger = logging.getLogger("browser_mcp")
+logger.setLevel(logging.DEBUG)
 
 mcp = FastMCP("browser-automation", version="0.1.0")
 
-_browser_controller = None
+# Multiple browser controllers for different sessions (HTTP mode)
+_browser_controllers = {}  # Dict[session_id, BrowserController]
 _shutdown_event = None
 _is_shutting_down = False
+
+def _nova_thread_initializer():
+    """Initialize Nova Act thread with isolated asyncio context"""
+    import asyncio
+    try:
+        # Remove any existing event loop
+        asyncio.set_event_loop(None)
+    except:
+        pass
+    
+    try:
+        # Create a fresh event loop for this thread
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        logger.debug("Nova Act thread initialized with fresh event loop")
+    except Exception as e:
+        logger.warning(f"Failed to initialize Nova Act thread: {e}")
+
+def get_session_thread_pool(session_id: str) -> ThreadPoolExecutor:
+    """Get or create a dedicated ThreadPoolExecutor for a specific session"""
+    global _session_thread_pools
+    
+    if session_id not in _session_thread_pools:
+        _session_thread_pools[session_id] = ThreadPoolExecutor(
+            max_workers=1,  # Nova Act recommends single thread per session
+            thread_name_prefix=f"nova-session-{session_id}-",
+            initializer=_nova_thread_initializer
+        )
+        logger.info(f"Created dedicated ThreadPool for session {session_id}")
+    
+    return _session_thread_pools[session_id]
+
+def shutdown_session_thread_pool(session_id: str):
+    """Shutdown ThreadPoolExecutor for a specific session"""
+    global _session_thread_pools
+    
+    if session_id in _session_thread_pools:
+        executor = _session_thread_pools[session_id]
+        executor.shutdown(wait=True)
+        del _session_thread_pools[session_id]
+        logger.info(f"Shut down ThreadPool for session {session_id}")
+
+def shutdown_all_session_thread_pools():
+    """Shutdown all session ThreadPoolExecutors"""
+    global _session_thread_pools
+    
+    for session_id in list(_session_thread_pools.keys()):
+        shutdown_session_thread_pool(session_id)
+    
+    _session_thread_pools.clear()
+    logger.info("All session ThreadPools shut down")
+
+async def run_in_session_thread(session_id: str, func, *args, **kwargs):
+    """Execute function in dedicated session thread (Nova Act SDK recommended approach)"""
+    executor = get_session_thread_pool(session_id)
+    loop = asyncio.get_event_loop()
+    
+    def wrapper():
+        return func(*args, **kwargs)
+    
+    logger.debug(f"Executing {func.__name__} in session {session_id} thread")
+    return await loop.run_in_executor(executor, wrapper)
 
 def format_log_response(response_data):
     if isinstance(response_data, dict):
@@ -38,11 +122,44 @@ def format_log_response(response_data):
         return json.dumps(simplified)
     return str(response_data)
 
-def get_browser_controller() -> BrowserController:
-    global _browser_controller
-    if _browser_controller is None and not _is_shutting_down:
-        _browser_controller = BrowserController()
-    return _browser_controller
+def get_session_id_from_context() -> str:
+    """Extract session ID from current context"""
+    try:
+        headers = get_http_headers()
+        session_id = headers.get("x-session-id") or headers.get("X-Session-ID")
+        if session_id:
+            logger.debug(f"Got session ID from HTTP header: {session_id}")
+            return session_id
+        else:
+            logger.warning(f"No session ID in headers. Available headers: {list(headers.keys())}")
+    except Exception as e:
+        logger.warning(f"Failed to get HTTP headers: {e}")
+        # Not in HTTP context, try environment variable
+        session_id = os.environ.get("BROWSER_SESSION_ID")
+        if session_id:
+            return session_id
+    
+    logger.warning("No session ID provided - using default session")
+    return "default"
+
+def get_browser_controller(session_id: str = None) -> BrowserController:
+    global _browser_controllers
+    
+    if _is_shutting_down:
+        return None
+    
+    # Get session_id from context if not provided
+    if not session_id:
+        session_id = get_session_id_from_context()
+    
+    # Create or get controller for this session
+    if session_id not in _browser_controllers:
+        logger.info(f"Creating new browser controller for session: {session_id}")
+        _browser_controllers[session_id] = BrowserController(session_id=session_id)
+    else:
+        logger.debug(f"Reusing existing browser controller for session: {session_id}")
+    
+    return _browser_controllers[session_id]
 
 def create_error_response(e: Exception, context: str) -> Dict[str, Any]:
     logger.error(f"Error in {context}: {str(e)}")
@@ -61,18 +178,19 @@ async def navigate(url: str) -> Dict[str, Any]:
               URLs without protocol will automatically have 'https://' added
     """
     try:
-        browser = get_browser_controller()
+        session_id = get_session_id_from_context()
+        browser = get_browser_controller(session_id)
         
-        if not await asyncio.to_thread(browser.is_initialized):
+        if not await run_in_session_thread(session_id, browser.is_initialized):
             return {"status": "error", "message": "Browser not initialized"}
             
-        result = await asyncio.to_thread(browser.go_to_url, url)
+        result = await run_in_session_thread(session_id, browser.go_to_url, url)
         
         response = {
             "status": "success",
             "message": f"Navigated to {url}",
             "current_url": result["current_url"],
-            "page_title": await asyncio.to_thread(browser.get_page_title),
+            "page_title": await run_in_session_thread(session_id, browser.get_page_title),
             "screenshot": result["screenshot"]
         }
         
@@ -104,24 +222,26 @@ async def act(instruction: str, max_steps: Optional[int] = 2) -> Dict[str, Any]:
                   - Sequential interactions (max_steps=2)
     """
     try:
-        browser = get_browser_controller()
+        session_id = get_session_id_from_context()
+        browser = get_browser_controller(session_id)
         
-        if not await asyncio.to_thread(browser.is_initialized):
+        if not await run_in_session_thread(session_id, browser.is_initialized):
             return {"status": "error", "message": "Browser not initialized"}
         
         max_steps = DEFAULT_BROWSER_SETTINGS.get("max_steps", 30)
         timeout = DEFAULT_BROWSER_SETTINGS.get("timeout", 300)
         
-        result = await asyncio.to_thread(
+        result = await run_in_session_thread(
+            session_id,
             browser.execute_action, 
             instruction,
             max_steps=max_steps, 
             timeout=timeout
         )
         
-        screenshot_data = await asyncio.to_thread(browser.take_screenshot)
-        current_url = await asyncio.to_thread(browser.get_current_url)
-        page_title = await asyncio.to_thread(browser.get_page_title)
+        screenshot_data = await run_in_session_thread(session_id, browser.take_screenshot)
+        current_url = await run_in_session_thread(session_id, browser.get_current_url)
+        page_title = await run_in_session_thread(session_id, browser.get_page_title)
         
         if hasattr(result, 'parsed_response') and result.parsed_response:
             return {
@@ -154,11 +274,12 @@ async def act(instruction: str, max_steps: Optional[int] = 2) -> Dict[str, Any]:
         page_title = ""
         
         try:
-            browser = get_browser_controller()
-            if await asyncio.to_thread(browser.is_initialized):
-                screenshot_data = await asyncio.to_thread(browser.take_screenshot)
-                current_url = await asyncio.to_thread(browser.get_current_url)
-                page_title = await asyncio.to_thread(browser.get_page_title)
+            session_id = get_session_id_from_context()
+            browser = get_browser_controller(session_id)
+            if await run_in_session_thread(session_id, browser.is_initialized):
+                screenshot_data = await run_in_session_thread(session_id, browser.take_screenshot)
+                current_url = await run_in_session_thread(session_id, browser.get_current_url)
+                page_title = await run_in_session_thread(session_id, browser.get_page_title)
         except:
             pass
             
@@ -193,9 +314,10 @@ async def extract(
         custom_schema: Custom JSON schema when schema_type is 'custom'
     """
     try:
-        browser = get_browser_controller()
+        session_id = get_session_id_from_context()
+        browser = get_browser_controller(session_id)
         
-        if not await asyncio.to_thread(browser.is_initialized):
+        if not await run_in_session_thread(session_id, browser.is_initialized):
             return {"status": "error", "message": "Browser not initialized"}
         
         schema = None
@@ -230,7 +352,8 @@ async def extract(
         max_steps = DEFAULT_BROWSER_SETTINGS.get("max_steps", 30)
         timeout = DEFAULT_BROWSER_SETTINGS.get("timeout", 300)
         
-        result = await asyncio.to_thread(
+        result = await run_in_session_thread(
+            session_id,
             browser.execute_action, 
             prompt, 
             schema=schema,
@@ -238,9 +361,9 @@ async def extract(
             timeout=timeout
         )
         
-        screenshot_data = await asyncio.to_thread(browser.take_screenshot)
-        current_url = await asyncio.to_thread(browser.get_current_url)
-        page_title = await asyncio.to_thread(browser.get_page_title)
+        screenshot_data = await run_in_session_thread(session_id, browser.take_screenshot)
+        current_url = await run_in_session_thread(session_id, browser.get_current_url)
+        page_title = await run_in_session_thread(session_id, browser.get_page_title)
         
         if hasattr(result, 'parsed_response') and result.parsed_response:
             return {
@@ -282,35 +405,45 @@ async def initialize_browser(headless: bool = False, url: str = None) -> Dict[st
         url: Optional starting URL for the browser session
     """
     try:
-        browser = get_browser_controller()
+        # Get session ID from context
+        session_id = get_session_id_from_context()
+        browser = get_browser_controller(session_id)
         
-        if await asyncio.to_thread(browser.is_initialized):
-            screenshot_data = await asyncio.to_thread(browser.take_screenshot)
+        logger.info(f"Initializing browser for session {session_id} using dedicated ThreadPool")
+        
+        # Check if already initialized (using session thread)
+        if await run_in_session_thread(session_id, browser.is_initialized):
+            screenshot_data = await run_in_session_thread(session_id, browser.take_screenshot)
             
             response = {
                 "status": "already_initialized",
                 "message": "Browser was already initialized",
-                "current_url": await asyncio.to_thread(browser.get_current_url),
-                "page_title": await asyncio.to_thread(browser.get_page_title),
+                "current_url": await run_in_session_thread(session_id, browser.get_current_url),
+                "page_title": await run_in_session_thread(session_id, browser.get_page_title),
                 "screenshot": screenshot_data
             }
             logger.info(f"Browser status: {format_log_response(response)}")
             return response
         
-        success, screenshot_data, error_msg = await asyncio.to_thread(
+        # Initialize browser in session thread
+        success, screenshot_data, error_msg = await run_in_session_thread(
+            session_id,
             browser.initialize_browser,
             headless=headless,
             starting_url=url
         )
         
         if not success:
+            detailed_error = error_msg or 'Unknown error'
+            logger.error(f"Browser initialization failed for session {session_id}: {detailed_error}")
             return {
                 "status": "error",
-                "message": f"Failed to initialize browser: {error_msg or 'Unknown error'}"
+                "message": f"Failed to initialize browser: {detailed_error}"
             }
         
-        current_url = await asyncio.to_thread(browser.get_current_url)
-        page_title = await asyncio.to_thread(browser.get_page_title)
+        # Get additional info from same session thread
+        current_url = await run_in_session_thread(session_id, browser.get_current_url)
+        page_title = await run_in_session_thread(session_id, browser.get_page_title)
         
         response = {
             "status": "success",
@@ -330,18 +463,24 @@ async def close_browser() -> Dict[str, Any]:
     Close the browser and clean up resources.
     """
     try:
-        browser = get_browser_controller()
+        session_id = get_session_id_from_context()
+        browser = get_browser_controller(session_id)
         
-        if not await asyncio.to_thread(browser.is_initialized):
+        if not await run_in_session_thread(session_id, browser.is_initialized):
             return {
                 "status": "not_initialized",
                 "message": "Browser was not initialized"
             }
 
-        success = await asyncio.to_thread(browser.close)
+        success = await run_in_session_thread(session_id, browser.close)
         
-        global _browser_controller
-        _browser_controller = None
+        # Clean up session resources
+        global _browser_controllers
+        if browser.session_id in _browser_controllers:
+            del _browser_controllers[browser.session_id]
+        
+        # Shutdown session ThreadPool
+        shutdown_session_thread_pool(session_id)
         
         await asyncio.sleep(0.5)
         
@@ -365,18 +504,13 @@ async def restart_browser(headless: bool = False, url: str = None):
         dict: Status of the restart operation
     """
     try:
-        # Close the current browser
         await close_browser()
-        
         return await initialize_browser(headless, url)
-    
     except Exception as e:
         return {
             "status": "error",
             "message": f"Failed to restart browser: {str(e)}"
         }
-
-
 
 @mcp.tool()
 async def take_screenshot(max_width: int = 800, quality: int = 70) -> Dict[str, Any]:
@@ -388,18 +522,19 @@ async def take_screenshot(max_width: int = 800, quality: int = 70) -> Dict[str, 
         quality: JPEG quality (1-100)
     """
     try:
-        browser = get_browser_controller()
+        session_id = get_session_id_from_context()
+        browser = get_browser_controller(session_id)
         
-        if not await asyncio.to_thread(browser.is_initialized):
+        if not await run_in_session_thread(session_id, browser.is_initialized):
             return {
                 "status": "error", 
                 "message": "Browser not initialized",
                 "screenshot": None
             }
             
-        screenshot_data = await asyncio.to_thread(browser.take_screenshot, max_width, quality)
-        current_url = await asyncio.to_thread(browser.get_current_url)
-        page_title = await asyncio.to_thread(browser.get_page_title)
+        screenshot_data = await run_in_session_thread(session_id, browser.take_screenshot, max_width, quality)
+        current_url = await run_in_session_thread(session_id, browser.get_current_url)
+        page_title = await run_in_session_thread(session_id, browser.get_page_title)
         
         return {
             "status": "success",
@@ -418,29 +553,74 @@ async def take_screenshot(max_width: int = 800, quality: int = 70) -> Dict[str, 
 
 def cleanup_resources_sync():
     """
-    Simplified shutdown process - prevent resource leaks through reference cleanup
+    Comprehensive shutdown process - prevent resource leaks through reference cleanup
     """
-    global _browser_controller, _is_shutting_down
+    global _browser_controllers, _is_shutting_down
     _is_shutting_down = True
     
-    if _browser_controller is not None:
+    if _browser_controllers:
         try:
-            logger.info("Closing browser resources...")
+            logger.info("Closing all browser resources...")
             
-            # Clear global reference
-            controller_ref = _browser_controller
-            _browser_controller = None
-            
-            # Simply call close method
-            if hasattr(controller_ref, 'close'):
+            # Close all session browser controllers
+            for session_id, controller in list(_browser_controllers.items()):
                 try:
-                    controller_ref.close()
+                    if controller:
+                        logger.info(f"Closing browser for session {session_id}")
+                        controller.close()
                 except Exception as e:
-                    # Ignore errors and continue
-                    pass
+                    logger.error(f"Error closing browser for session {session_id}: {e}")
             
-            # Clear direct reference
-            controller_ref = None
+            # Clear all references
+            _browser_controllers.clear()
+            
+            # Force terminate any remaining Chrome processes
+            try:
+                import psutil
+                import os
+                
+                current_pid = os.getpid()
+                parent_process = psutil.Process(current_pid)
+                
+                # Find all Chrome/Chromium child processes
+                chrome_processes = []
+                for child in parent_process.children(recursive=True):
+                    try:
+                        if child.name().lower() in ['chrome', 'chromium', 'google chrome']:
+                            chrome_processes.append(child)
+                    except (psutil.NoSuchProcess, psutil.AccessDenied):
+                        continue
+                
+                if chrome_processes:
+                    logger.info(f"Force terminating {len(chrome_processes)} remaining Chrome processes")
+                    
+                    # Terminate all Chrome processes
+                    for proc in chrome_processes:
+                        try:
+                            logger.info(f"Terminating Chrome process {proc.pid}")
+                            proc.terminate()
+                        except (psutil.NoSuchProcess, psutil.AccessDenied):
+                            continue
+                    
+                    # Wait and kill if still running
+                    import time
+                    time.sleep(1.0)
+                    
+                    for proc in chrome_processes:
+                        try:
+                            if proc.is_running():
+                                logger.warning(f"Force killing Chrome process {proc.pid}")
+                                proc.kill()
+                        except (psutil.NoSuchProcess, psutil.AccessDenied):
+                            continue
+                            
+            except ImportError:
+                logger.warning("psutil not available for process cleanup")
+            except Exception as e:
+                logger.error(f"Error in process cleanup: {e}")
+            
+            # Shutdown all session ThreadPools
+            shutdown_all_session_thread_pools()
             
             # Force garbage collection
             import gc
@@ -458,7 +638,7 @@ async def shutdown_server(timeout=5.0):
     """
     Gracefully shutdown the server and clean up resources with timeout
     """
-    global _browser_controller, _is_shutting_down, _shutdown_event
+    global _browser_controllers, _is_shutting_down, _shutdown_event
     import threading
     logger.info(f"Shutdown starting in thread ID: {threading.get_ident()}")
 
@@ -490,18 +670,19 @@ async def shutdown_server(timeout=5.0):
     
     logger.info(f"Cancelled {cancelled_tasks} tasks")
     
-    # Now close the browser
-    if _browser_controller is not None:
+    # Now close all browsers
+    if _browser_controllers:
         try:
-            logger.info("Closing browser...")
+            logger.info("Closing all browsers...")
             try:
-                # First try close in current thread if possible
-                if hasattr(_browser_controller, 'close') and callable(_browser_controller.close):
+                # First try to close all controllers directly
+                for session_id, controller in list(_browser_controllers.items()):
                     try:
-                        result = _browser_controller.close()
-                        logger.info(f"Direct browser close result: {result}")
+                        if controller and hasattr(controller, 'close'):
+                            result = controller.close()
+                            logger.info(f"Direct browser close result for {session_id}: {result}")
                     except Exception as direct_error:
-                        logger.error(f"Direct browser close failed: {direct_error}")
+                        logger.error(f"Direct browser close failed for {session_id}: {direct_error}")
                 
                 # Then try with executor as backup
                 with concurrent.futures.ThreadPoolExecutor() as executor:
@@ -516,8 +697,11 @@ async def shutdown_server(timeout=5.0):
             except Exception as close_error:
                 logger.error(f"Error in browser close routine: {close_error}")
         finally:
-            # Always null the controller reference
-            _browser_controller = None
+            # Always clear all controller references
+            _browser_controllers.clear()
+    
+    # Shutdown all session ThreadPools
+    shutdown_all_session_thread_pools()
     
     # Set shutdown event
     if _shutdown_event:
@@ -536,7 +720,7 @@ async def shutdown_server(timeout=5.0):
     logger.info("Shutdown completed")
 
 def register_exit_handlers():
-    def sync_signal_handler(signum, frame):
+    def sync_signal_handler(signum, _):
         global _is_shutting_down
         if _is_shutting_down:
             logger.info("Already shutting down, ignoring signal")
@@ -571,7 +755,7 @@ async def async_main(args):
         for sig in (signal.SIGINT, signal.SIGTERM):
             loop.add_signal_handler(
                 sig,
-                lambda s=sig: asyncio.create_task(
+                lambda _=sig: asyncio.create_task(
                     shutdown_server(timeout=1.0)
                 )
             )
@@ -619,8 +803,8 @@ def main():
     import argparse
     
     parser = argparse.ArgumentParser(description="Browser Automation MCP Server")
-    parser.add_argument("--transport", type=str, default="stdio", choices=["stdio", "http"],
-                        help="Transport protocol (stdio or http)")
+    parser.add_argument("--transport", type=str, default="streamable-http", choices=["stdio", "http", "streamable-http"],
+                        help="Transport protocol (stdio, http, or streamable-http)")
     parser.add_argument("--host", type=str, default="localhost",
                         help="Host to bind to (for HTTP transport)")
     parser.add_argument("--port", type=int, default=8000,
@@ -635,9 +819,14 @@ def main():
     
     # Use asyncio.run with very short timeout for the entire operation
     try:
-        # Handle KeyboardInterrupt before it reaches asyncio.run()
-        exit_code = asyncio.run(async_main(args))
-        sys.exit(exit_code)
+        if args.transport == "streamable-http":
+            # Use streamable HTTP transport (recommended for production)
+            logger.info("Starting MCP server with Streamable HTTP transport...")
+            mcp.run(transport="streamable-http", host=args.host, port=args.port)
+        else:
+            # Handle KeyboardInterrupt before it reaches asyncio.run()
+            exit_code = asyncio.run(async_main(args))
+            sys.exit(exit_code)
     except KeyboardInterrupt:
         logger.info("Keyboard interrupt detected")
         cleanup_resources_sync()

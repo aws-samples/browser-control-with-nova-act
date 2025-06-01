@@ -32,6 +32,10 @@ class ShutdownManager:
         """Register agent manager for browser cleanup"""
         self._agent_manager = agent_manager
     
+    def register_profile_manager(self, profile_manager):
+        """Register profile manager for cleanup"""
+        self._profile_manager = profile_manager
+    
     def register_session_manager(self, session_manager):
         """Register session manager for session cleanup during shutdown"""
         self._session_manager = session_manager
@@ -106,6 +110,10 @@ class ShutdownManager:
                                 logger.error(f"Error terminating process: {e}")
                     except Exception as e:
                         logger.error(f"Error handling process {process_id}: {e}")
+            
+            # Force cleanup Chrome processes synchronously 
+            self._sync_cleanup_chrome_processes()
+            
         except Exception as e:
             logger.error(f"Error in exit handler: {e}")
     
@@ -139,7 +147,20 @@ class ShutdownManager:
                 except (asyncio.TimeoutError, asyncio.CancelledError, Exception):
                     pass  
             except Exception:
-                pass  
+                pass
+        
+        # Clean up profile manager
+        if hasattr(self, '_profile_manager') and self._profile_manager:
+            try:
+                self._profile_manager.cleanup_all_profiles()
+            except Exception as e:
+                logger.error(f"Error cleaning up profiles: {e}")
+        
+        # Force cleanup remaining Chrome processes
+        try:
+            await self._force_cleanup_chrome_processes()
+        except Exception as e:
+            logger.error(f"Error in Chrome process cleanup: {e}")
         
         if self._mcp_processes:
             for process_id, process in list(self._mcp_processes.items()):
@@ -161,6 +182,124 @@ class ShutdownManager:
             
         logger.info("Shutdown complete")
     
+    async def _force_cleanup_chrome_processes(self):
+        """Force cleanup of all Chrome processes"""
+        try:
+            import psutil
+            import os
+            
+            # Get current process
+            current_pid = os.getpid()
+            logger.info(f"Cleaning up Chrome processes spawned by PID {current_pid}")
+            
+            # Find all Chrome processes that might be related to our application
+            chrome_processes = []
+            for proc in psutil.process_iter(['pid', 'name', 'ppid', 'cmdline']):
+                try:
+                    proc_info = proc.info
+                    proc_name = proc_info['name'].lower() if proc_info['name'] else ""
+                    
+                    # Look for Chrome/Chromium processes
+                    if any(chrome_name in proc_name for chrome_name in ['chrome', 'chromium']):
+                        # Check if it's related to our Nova Act usage (look for typical Nova Act command line args)
+                        cmdline = proc_info.get('cmdline', [])
+                        if cmdline and any('--remote-debugging-port' in arg or '--user-data-dir' in arg for arg in cmdline):
+                            chrome_processes.append(proc)
+                            logger.info(f"Found Chrome process to cleanup: PID {proc_info['pid']} - {proc_name}")
+                        
+                except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+                    continue
+            
+            if chrome_processes:
+                logger.info(f"Force terminating {len(chrome_processes)} Chrome processes")
+                
+                # First, try to terminate gracefully
+                for proc in chrome_processes:
+                    try:
+                        logger.info(f"Terminating Chrome process {proc.pid}")
+                        proc.terminate()
+                    except (psutil.NoSuchProcess, psutil.AccessDenied):
+                        continue
+                
+                # Wait a bit for graceful termination
+                await asyncio.sleep(2.0)
+                
+                # Then force kill any remaining processes
+                for proc in chrome_processes:
+                    try:
+                        if proc.is_running():
+                            logger.warning(f"Force killing Chrome process {proc.pid}")
+                            proc.kill()
+                    except (psutil.NoSuchProcess, psutil.AccessDenied):
+                        continue
+                        
+                logger.info("Chrome process cleanup completed")
+            else:
+                logger.info("No Chrome processes found to cleanup")
+                
+        except ImportError:
+            logger.warning("psutil not available for Chrome process cleanup")
+        except Exception as e:
+            logger.error(f"Error in Chrome process cleanup: {e}")
+    
+    def _sync_cleanup_chrome_processes(self):
+        """Synchronous version of Chrome process cleanup for exit handler"""
+        try:
+            import psutil
+            import time
+            
+            logger.info("Synchronous Chrome process cleanup starting")
+            
+            # Find all Chrome processes that might be related to our application
+            chrome_processes = []
+            for proc in psutil.process_iter(['pid', 'name', 'ppid', 'cmdline']):
+                try:
+                    proc_info = proc.info
+                    proc_name = proc_info['name'].lower() if proc_info['name'] else ""
+                    
+                    # Look for Chrome/Chromium processes
+                    if any(chrome_name in proc_name for chrome_name in ['chrome', 'chromium']):
+                        # Check if it's related to our Nova Act usage (look for typical Nova Act command line args)
+                        cmdline = proc_info.get('cmdline', [])
+                        if cmdline and any('--remote-debugging-port' in arg or '--user-data-dir' in arg for arg in cmdline):
+                            chrome_processes.append(proc)
+                            logger.info(f"Found Chrome process to cleanup: PID {proc_info['pid']} - {proc_name}")
+                        
+                except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+                    continue
+            
+            if chrome_processes:
+                logger.info(f"Force terminating {len(chrome_processes)} Chrome processes")
+                
+                # First, try to terminate gracefully
+                for proc in chrome_processes:
+                    try:
+                        logger.info(f"Terminating Chrome process {proc.pid}")
+                        proc.terminate()
+                    except (psutil.NoSuchProcess, psutil.AccessDenied):
+                        continue
+                
+                # Wait a bit for graceful termination
+                time.sleep(1.0)
+                
+                # Then force kill any remaining processes
+                for proc in chrome_processes:
+                    try:
+                        if proc.is_running():
+                            logger.warning(f"Force killing Chrome process {proc.pid}")
+                            proc.kill()
+                    except (psutil.NoSuchProcess, psutil.AccessDenied):
+                        continue
+                        
+                logger.info("Synchronous Chrome process cleanup completed")
+            else:
+                logger.info("No Chrome processes found to cleanup")
+                
+        except ImportError:
+            logger.warning("psutil not available for Chrome process cleanup")
+        except Exception as e:
+            logger.error(f"Error in synchronous Chrome process cleanup: {e}")
+    
     def force_cleanup(self):
         if self._mcp_processes:
             for process_id, process in list(self._mcp_processes.items()):
@@ -169,6 +308,9 @@ class ShutdownManager:
                         process.kill()
                 except Exception:
                     pass  
+        
+        # Force cleanup Chrome processes
+        self._sync_cleanup_chrome_processes()
         
         try:
             import gc

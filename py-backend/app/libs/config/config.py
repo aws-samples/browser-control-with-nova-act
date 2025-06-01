@@ -1,5 +1,9 @@
 # Global configuration settings for the application
 import os
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # LLM Model settings
 DEFAULT_MODEL_ID = "us.anthropic.claude-3-7-sonnet-20250219-v1:0"
@@ -10,7 +14,7 @@ MAX_AGENT_TURNS = 6       # Maximum turns between agent and MCP tools
 BROWSER_MAX_STEPS = int(os.environ.get("NOVA_BROWSER_MAX_STEPS", "2"))  # Maximum turns between Nova Act and Browser
 
 # Browser settings - Core
-BROWSER_HEADLESS = True  # Set to False for visible browser windows
+BROWSER_HEADLESS = os.environ.get("NOVA_BROWSER_HEADLESS", "True").lower() in ("true", "1", "yes")
 BROWSER_START_URL = "https://www.google.com"  # Default starting URL
 BROWSER_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 
@@ -19,13 +23,13 @@ BROWSER_TIMEOUT = int(os.environ.get("NOVA_BROWSER_TIMEOUT", "100"))
 BROWSER_URL_TIMEOUT = int(os.environ.get("NOVA_BROWSER_URL_TIMEOUT", "60"))
 
 # Browser settings - Profiles
-BROWSER_USER_DATA_DIR = os.environ.get("NOVA_BROWSER_USER_DATA_DIR", "/Users/kevmyung/Downloads/test/nova_chrome_profile")
-BROWSER_CLONE_USER_DATA = os.environ.get("NOVA_BROWSER_CLONE_USER_DATA", "false").lower() == "true"
+BROWSER_USER_DATA_DIR = os.environ.get("NOVA_BROWSER_USER_DATA_DIR", "/path/to/chromium/profile")
+BROWSER_CLONE_USER_DATA = os.environ.get("NOVA_BROWSER_CLONE_USER_DATA", "False").lower() in ("true", "1", "yes")
 
 # Browser settings - Media
 BROWSER_SCREENSHOT_QUALITY = int(os.environ.get("NOVA_BROWSER_SCREENSHOT_QUALITY", "70"))
 BROWSER_SCREENSHOT_MAX_WIDTH = int(os.environ.get("NOVA_BROWSER_SCREENSHOT_MAX_WIDTH", "800"))
-BROWSER_RECORD_VIDEO = os.environ.get("NOVA_BROWSER_RECORD_VIDEO", "false").lower() == "true"
+BROWSER_RECORD_VIDEO = os.environ.get("NOVA_BROWSER_RECORD_VIDEO", "False").lower() in ("true", "1", "yes")
 
 # API settings
 API_TIMEOUT_SECONDS = 60
@@ -39,7 +43,7 @@ CONVERSATION_CLEANUP_INTERVAL = 3600  # Cleanup interval in seconds
 # Logging settings
 DEBUG_LOGGING = True
 LOGS_DIRECTORY = os.environ.get("NOVA_BROWSER_LOGS_DIR", None)
-BROWSER_QUIET_MODE = os.environ.get("NOVA_BROWSER_QUIET", "false").lower() == "true"
+BROWSER_QUIET_MODE = os.environ.get("NOVA_BROWSER_QUIET", "False").lower() in ("true", "1", "yes")
 
 # MCP server settings
 MCP_SERVER_NAME = "nova-browser-automation"

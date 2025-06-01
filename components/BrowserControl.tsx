@@ -56,10 +56,11 @@ function BrowserControl({
     const unsubscribe = subscribeToEvent.taskStatusUpdate(({ status }) => {
       if (status === 'start') {
         agentControl.setCanStopAgent(true);
-        agentControl.setIsStopInProgress(false); // Reset stop in progress when new task starts
-      } else if (status === 'complete') {
+        // Don't reset stop in progress here - only when task actually completes
+      } else if (status === 'complete' || status === 'stopped') {
+        // Only clear states when task is actually completed or stopped
         agentControl.setCanStopAgent(false);
-        agentControl.setIsStopInProgress(false); // Clear stop in progress when task completes
+        agentControl.setIsStopInProgress(false);
       }
     });
 

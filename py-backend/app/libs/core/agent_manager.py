@@ -292,7 +292,7 @@ class AgentManager:
     async def get_or_create_browser_manager(
         self, 
         session_id: str, 
-        server_path: str, 
+        server_url: str = None,
         headless: bool = BROWSER_HEADLESS, 
         model_id: str = None, 
         region: str = None, 
@@ -311,6 +311,7 @@ class AgentManager:
         if not session:
             raise ValueError(f"Invalid session: {session_id}")
         # Return existing manager if available
+        logger.debug(f"Current browser managers: {list(self._browser_managers.keys())}")
         if session_id in self._browser_managers:
             logger.info(f"Reusing existing browser manager for session {session_id}")
             manager = self._browser_managers[session_id]
@@ -336,9 +337,12 @@ class AgentManager:
                 server_config["model_id"] = model_id
             if region:
                 server_config["region"] = region
-                
+            
+            # Using HTTP approach - connect to running Nova Act server
             browser_manager = BrowserManager(server_config=server_config)
-            await browser_manager.connect_to_server(server_path)
+            # Use provided server_url or default to localhost:8001/mcp/
+            effective_server_url = server_url or "http://localhost:8001/mcp/"
+            await browser_manager.connect_to_server(effective_server_url)
             
             # Initialize with URL preference
             init_url = url or self._session_urls.get(session_id, "https://www.google.com")
@@ -483,11 +487,20 @@ class AgentManager:
                 
         except asyncio.TimeoutError:
             logger.warning(f"Browser manager cleanup timeout for session {session_id}")
+            # Force cleanup even if timeout occurred
+            try:
+                if hasattr(manager, '_server_process') and manager._server_process:
+                    manager._server_process.terminate()
+                    logger.info(f"Force terminated server process for session {session_id}")
+            except Exception as e:
+                logger.error(f"Error force terminating server process: {e}")
         except Exception as e:
             logger.error(f"Error during browser manager cleanup for session {session_id}: {e}")
         finally:
-            # Always remove from tracking
+            # Always remove from tracking regardless of cleanup success
             self._browser_managers.pop(session_id, None)
+            self._session_urls.pop(session_id, None)
+            logger.info(f"Removed session {session_id} from browser manager tracking")
             # Update state to closed
             await self.update_browser_state(
                 session_id, status=self._BrowserStatus.CLOSED
