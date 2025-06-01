@@ -14,12 +14,8 @@ from fastmcp.server.dependencies import get_http_headers
 from browser_controller import BrowserController
 from nova_act_config import DEFAULT_BROWSER_SETTINGS
 
-# Session-based ThreadPools for Nova Act operations (recommended by Nova Act SDK)
 _session_thread_pools = {}  # Dict[session_id, ThreadPoolExecutor]
-_max_concurrent_browsers = 10  # Maximum concurrent browser sessions
 
-
-# Load environment variables from .env file
 try:
     from dotenv import load_dotenv
     # Find .env file in py-backend directory

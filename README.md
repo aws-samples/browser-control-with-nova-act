@@ -22,6 +22,13 @@ Bridges the gap between human intent and browser actions:
 - **Contextual Continuity**: Maintains context across complex multi-step tasks
 - **Smart Task Breakdown**: Converts high-level goals into step-by-step browser actions
 
+### 🚀 Concurrent Multi-User Sessions
+Enable multiple users to automate browser tasks simultaneously:
+- Session-Based Isolation: Each user gets a dedicated browser instance with unique session ID
+- Independent Browser Profiles: Separate cookies, authentication, and browsing data per session
+- Parallel Task Execution: Multiple browser automation tasks run concurrently without interference
+- Scalable Architecture: Handles dozens of concurrent users with isolated browser contexts
+
 ### 👥 **Human-in-the-Loop**
 Seamlessly handles scenarios that require human judgment:
 - Authentication challenges and CAPTCHAs
@@ -32,11 +39,9 @@ Seamlessly handles scenarios that require human judgment:
 ### 🔌 **Model Context Protocol (MCP) Integration**
 <img src="assets/screenshots/mcp.png" width="600" alt="MCP">
 
-Extensible ecosystem of specialized tools:
-- Document processing for web research
-- External search APIs for data enrichment
-- Database integration for complex workflows
-- Standardized tool interface for easy customization
+Advanced tool integration through standardized protocol:
+- Standardized Tool Communication enables seamless integration of browser automation with external services
+- Streamable HTTP Transport enables real-time bidirectional communication between agents and tools with optimizerd resource usage
 
 ## Demo
 
