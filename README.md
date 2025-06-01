@@ -22,8 +22,10 @@ Bridges the gap between human intent and browser actions:
 - **Contextual Continuity**: Maintains context across complex multi-step tasks
 - **Smart Task Breakdown**: Converts high-level goals into step-by-step browser actions
 
-### 🚀 Concurrent Multi-User Sessions
-Enable multiple users to automate browser tasks simultaneously:
+### 🚀 Multi-Session Browsing
+<img src="assets/screenshots/multi-session.png" width="800" alt="Multi-Session">
+
+Enable multiple sessions (or users) to automate browser tasks simultaneously:
 - Session-Based Isolation: Each user gets a dedicated browser instance with unique session ID
 - Independent Browser Profiles: Separate cookies, authentication, and browsing data per session
 - Parallel Task Execution: Multiple browser automation tasks run concurrently without interference
