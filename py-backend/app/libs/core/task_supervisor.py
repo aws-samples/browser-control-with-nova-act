@@ -2,7 +2,7 @@ import logging
 import asyncio
 import traceback
 import time
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 
 from app.libs.config.prompts import DEFAULT_MODEL_ID
 from app.libs.utils.decorators import log_thought
@@ -127,9 +127,22 @@ class TaskSupervisor:
         
         return result
     
-    async def process_request(self, user_message: str, session_id: str, model_id: Optional[str] = None, region: Optional[str] = None):
+    async def process_request(self, messages: List[Dict[str, Any]], session_id: str, model_id: Optional[str] = None, region: Optional[str] = None):
         try:
             start_time = time.time()
+            
+            # Extract user message from the messages array for logging/validation
+            user_message = ""
+            for msg in reversed(messages):
+                if msg.get('role') == 'user':
+                    if isinstance(msg.get('content'), str):
+                        user_message = msg.get('content')
+                    elif isinstance(msg.get('content'), list):
+                        for content_item in msg.get('content', []):
+                            if isinstance(content_item, dict) and 'text' in content_item:
+                                user_message = content_item['text']
+                                break
+                    break
             
             # Ensure conversation session exists and add user message
             await self.conversation_manager.ensure_session(session_id)
@@ -155,9 +168,9 @@ class TaskSupervisor:
                 self.region = region
                 self.task_classifier.update_model(region=region)
             
-            # Classify the task
-            messages = await self.conversation_manager.get_conversation_history(session_id)
-            classification = await self.task_classifier.classify(user_message, session_id, messages)
+            # Classify the task with uploaded files
+            conversation_history = await self.conversation_manager.get_conversation_history(session_id)
+            classification = await self.task_classifier.classify_with_files(messages, session_id, conversation_history)
             execution_type = classification.get("type", "agent")
             
             # Handle conversation type differently

@@ -46,6 +46,149 @@ class TaskClassifier:
             logger.error(f"Error in extract_json_from_text: {str(e)}")
             return None
 
+    async def classify_with_files(self, uploaded_messages: List[Dict[str, Any]], session_id: str, conversation_history: List[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Classify messages with uploaded files included.
+        
+        Args:
+            uploaded_messages: Raw messages from frontend (may contain files)
+            session_id: The session identifier
+            conversation_history: Optional conversation history for context
+            
+        Returns:
+            Classification result with type and other relevant information
+        """
+        try:
+            # Extract user message for classification
+            user_message = ""
+            user_message_with_files = None
+            
+            # Find the latest user message and preserve file content
+            for msg in reversed(uploaded_messages):
+                if msg.get('role') == 'user':
+                    user_message_with_files = self._convert_to_converse_format(msg)
+                    
+                    # Extract text for logging/fallback
+                    if isinstance(msg.get('content'), str):
+                        user_message = msg.get('content')
+                    elif isinstance(msg.get('content'), list):
+                        for content_item in msg.get('content', []):
+                            if isinstance(content_item, dict) and 'text' in content_item:
+                                user_message = content_item['text']
+                                break
+                    break
+            
+            # Fallback to original method if no files found
+            if not user_message_with_files:
+                return await self.classify(user_message, session_id, conversation_history)
+            
+            # Get browser context if available
+            browser_context = await self._get_browser_context(session_id)
+            
+            # Prepare messages with file content and browser context
+            filtered_messages = self._prepare_messages_with_files_and_context(
+                user_message_with_files, conversation_history, browser_context
+            )
+            
+            # Clean up images from conversation history (preserve uploaded files and current browser screenshot)
+            self._cleanup_conversation_images(filtered_messages)
+            
+            # Call model with Nova-optimized parameters
+            inference_config = {"temperature": 0.1, "maxTokens": 1000}
+            
+            # Add greedy decoding parameters for Nova models
+            if "nova" in self.model_id.lower():
+                inference_config.update({
+                    "temperature": 0.0,
+                    "topP": 1.0
+                })
+                additional_fields = {"inferenceConfig": {"topK": 1}}
+            else:
+                additional_fields = {}
+            
+            converse_params = {
+                "modelId": self.model_id,
+                "system": [{"text": get_router_prompt()}],
+                "messages": filtered_messages,
+                "inferenceConfig": inference_config,
+                "toolConfig": {
+                    **ROUTER_TOOL,
+                    "toolChoice": {"auto": {}}
+                }
+            }
+            
+            # Add Nova-specific parameters if using Nova model
+            if additional_fields:
+                converse_params["additionalModelRequestFields"] = additional_fields
+            
+            response = self.bedrock.converse(**converse_params)
+
+            # Get direct response text first
+            direct_response = ""
+            for item in response['output']['message']['content']:
+                if 'text' in item:
+                    direct_response = item['text']
+                    break
+            
+            # Default classification with user message
+            classification = {
+                "user_message": user_message,
+                "type": "conversation",  
+                "answer": direct_response 
+            }
+            
+            # Check for Tool Use
+            if response['stopReason'] == 'tool_use':
+                for item in response['output']['message']['content']:
+                    if 'toolUse' in item:
+                        tool_info = item['toolUse']
+                        tool_name = tool_info['name']
+                        
+                        if tool_name == "classifyRequest":
+                            tool_input = tool_info.get('input', {})
+                            classification_type = tool_input.get('type')
+                            
+                            if classification_type in ["navigate", "act", "agent"]:
+                                classification["type"] = classification_type
+                                
+                                if classification_type == "navigate" and "url" in tool_input:
+                                    classification["details"] = tool_input["url"]
+                        elif tool_name in ["navigate", "act", "agent"]:
+                            classification["type"] = tool_name
+                            
+                            if tool_name == "navigate":
+                                input_data = tool_info.get('input', {})
+                                if isinstance(input_data, dict):
+                                    for key, value in input_data.items():
+                                        if key in ["url", "details"] and isinstance(value, str) and value.startswith("http"):
+                                            classification["details"] = value
+                                            break
+                
+                return classification
+            
+            # If no tool use, check for JSON in text
+            extracted_json = self.extract_json_from_text(direct_response)
+            if extracted_json and "type" in extracted_json:
+                classification["type"] = extracted_json["type"]
+                
+                if extracted_json["type"] == "navigate" and "url" in extracted_json:
+                    url = extracted_json["url"]
+                    if url and isinstance(url, str) and len(url) > 0:
+                        classification["details"] = url
+                
+                return classification
+            
+            # Return conversational response
+            return classification
+                
+        except Exception as e:
+            logger.error(f"Error during task classification with files: {e}")
+            
+            return {
+                "type": "conversation",
+                "answer": f"I encountered an error, but I'll try to help: {str(e)}",
+                "user_message": user_message
+            }
+
     async def classify(self, user_message: str, session_id: str, conversation_history: List[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Classify a user message into an appropriate task type.
         
@@ -302,6 +445,116 @@ class TaskClassifier:
             logger.debug(f"Could not get browser context: {e}")
             
         return context
+
+    def _convert_to_converse_format(self, message: Dict[str, Any]) -> Dict[str, Any]:
+        """Convert frontend message format to Bedrock converse API format."""
+        content = message.get('content', [])
+        if isinstance(content, str):
+            return {"role": message.get('role', 'user'), "content": [{"text": content}]}
+        
+        converse_content = []
+        for item in content:
+            if isinstance(item, dict):
+                if 'text' in item:
+                    converse_content.append({"text": item['text']})
+                elif 'image' in item:
+                    # Handle image content - convert base64 string to bytes if needed
+                    image_data = item['image']
+                    if isinstance(image_data.get('source', {}).get('bytes'), str):
+                        import base64
+                        try:
+                            image_bytes = base64.b64decode(image_data['source']['bytes'])
+                            converse_content.append({
+                                "image": {
+                                    "format": image_data.get('format', 'jpeg'),
+                                    "source": {"bytes": image_bytes}
+                                }
+                            })
+                        except Exception as e:
+                            logger.warning(f"Failed to decode image base64: {e}")
+                    else:
+                        converse_content.append(item)
+                elif 'document' in item:
+                    # Handle document content - convert base64 string to bytes if needed
+                    doc_data = item['document']
+                    if isinstance(doc_data.get('source', {}).get('bytes'), str):
+                        import base64
+                        try:
+                            doc_bytes = base64.b64decode(doc_data['source']['bytes'])
+                            converse_content.append({
+                                "document": {
+                                    "format": doc_data.get('format', 'txt'),
+                                    "name": doc_data.get('name', 'uploaded_document'),
+                                    "source": {"bytes": doc_bytes}
+                                }
+                            })
+                        except Exception as e:
+                            logger.warning(f"Failed to decode document base64: {e}")
+                    else:
+                        converse_content.append(item)
+        
+        return {"role": message.get('role', 'user'), "content": converse_content}
+
+    def _prepare_messages_with_files_and_context(self, user_message_with_files: Dict[str, Any], conversation_history: List[Dict[str, Any]], browser_context: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Prepare messages with uploaded files and browser context enhancement."""
+        if conversation_history:
+            from app.libs.data.conversation_manager import prepare_messages_for_bedrock
+            filtered_messages = prepare_messages_for_bedrock(conversation_history)
+            
+            # Add the file-containing user message
+            if browser_context["has_browser"]:
+                # Enhance with browser context
+                enhanced_content = []
+                context_text = f"Current browser context:\n- URL: {browser_context['current_url']}\n- Page: {browser_context['page_title']}\n\n"
+                
+                # Add context and original message content
+                for content_item in user_message_with_files["content"]:
+                    if content_item.get('text'):
+                        enhanced_content.append({"text": context_text + "User request: " + content_item['text']})
+                        context_text = ""  # Only add context once
+                    else:
+                        enhanced_content.append(content_item)
+                
+                # Add screenshot if available
+                if browser_context.get("screenshot_bytes"):
+                    enhanced_content.append({
+                        "image": {
+                            "format": browser_context.get("screenshot_format", "jpeg"),
+                            "source": {"bytes": browser_context["screenshot_bytes"]}
+                        }
+                    })
+                
+                filtered_messages.append({"role": "user", "content": enhanced_content})
+            else:
+                filtered_messages.append(user_message_with_files)
+        else:
+            # No conversation history - create user message with files and browser context if available
+            if browser_context["has_browser"]:
+                enhanced_content = []
+                context_text = f"Current browser context:\n- URL: {browser_context['current_url']}\n- Page: {browser_context['page_title']}\n\n"
+                
+                # Add context and original message content
+                for content_item in user_message_with_files["content"]:
+                    if content_item.get('text'):
+                        enhanced_content.append({"text": context_text + "User request: " + content_item['text']})
+                        context_text = ""  # Only add context once
+                    else:
+                        enhanced_content.append(content_item)
+                
+                # Add screenshot if available
+                if browser_context.get("screenshot_bytes"):
+                    enhanced_content.append({
+                        "image": {
+                            "format": browser_context.get("screenshot_format", "jpeg"),
+                            "source": {"bytes": browser_context["screenshot_bytes"]}
+                        }
+                    })
+                
+                filtered_messages = [{"role": "user", "content": enhanced_content}]
+            else:
+                filtered_messages = [user_message_with_files]
+            
+        return filtered_messages
 
     def update_model(self, model_id: Optional[str] = None, region: Optional[str] = None):
         """Update the model ID and/or region for classification."""

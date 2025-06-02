@@ -2,6 +2,7 @@
 
 from fastapi import APIRouter, Request, BackgroundTasks, HTTPException, Depends
 import logging
+from typing import List, Dict, Any
 
 from app.libs.utils.thought_stream import thought_handler
 from app.libs.data.session_manager import get_session_manager
@@ -110,7 +111,7 @@ async def router_api(request: Request, background_tasks: BackgroundTasks):
             logger.error(f"Invalid messages format: {messages}")
             raise HTTPException(status_code=400, detail="Messages are required and must be a non-empty array")
         
-        # Extract the user message
+        # Extract the user message for logging/validation
         user_message = ""
         for i, msg in enumerate(reversed(messages)):
             if msg.get('role') == 'user':
@@ -129,7 +130,7 @@ async def router_api(request: Request, background_tasks: BackgroundTasks):
         
         background_tasks.add_task(
             process_request,
-            message=user_message,
+            messages=messages,
             session_id=session_id,
             model_id=model,
             region=region
@@ -160,7 +161,7 @@ async def router_api(request: Request, background_tasks: BackgroundTasks):
         raise HTTPException(status_code=status_code, detail=error_response)
 
 @with_thought_callback(category="request_processing", node_name="process_request")
-async def process_request(message: str, session_id: str, model_id: str = None, region: str = None):
+async def process_request(messages: List[Dict[str, Any]], session_id: str, model_id: str = None, region: str = None):
     """Process requests through TaskSupervisor"""
     try:
         
@@ -168,7 +169,7 @@ async def process_request(message: str, session_id: str, model_id: str = None, r
         global task_supervisor
         
         # Process the request
-        result = await task_supervisor.process_request(message, session_id, model_id, region)
+        result = await task_supervisor.process_request(messages, session_id, model_id, region)
         
         # Extract outcome data
         error = result.get("error", None)
