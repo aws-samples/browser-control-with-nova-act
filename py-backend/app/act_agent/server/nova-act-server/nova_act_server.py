@@ -36,7 +36,7 @@ logging.basicConfig(
 logger = logging.getLogger("browser_mcp")
 logger.setLevel(logging.DEBUG)
 
-mcp = FastMCP("browser-automation", version="0.1.0")
+mcp = FastMCP("browser-automation")
 
 # Multiple browser controllers for different sessions (HTTP mode)
 _browser_controllers = {}  # Dict[session_id, BrowserController]
