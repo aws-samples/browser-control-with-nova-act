@@ -24,7 +24,7 @@ BROWSER_URL_TIMEOUT = int(os.environ.get("NOVA_BROWSER_URL_TIMEOUT", "60"))
 
 # Browser settings - Profiles
 BROWSER_USER_DATA_DIR = os.environ.get("NOVA_BROWSER_USER_DATA_DIR", "/path/to/chromium/profile")
-BROWSER_CLONE_USER_DATA = os.environ.get("NOVA_BROWSER_CLONE_USER_DATA", "False").lower() in ("true", "1", "yes")
+BROWSER_CLONE_USER_DATA = os.environ.get("NOVA_BROWSER_CLONE_USER_DATA", "True").lower() in ("true", "1", "yes")
 
 # Browser settings - Media
 BROWSER_SCREENSHOT_QUALITY = int(os.environ.get("NOVA_BROWSER_SCREENSHOT_QUALITY", "70"))

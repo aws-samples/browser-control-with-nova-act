@@ -117,6 +117,7 @@ class BrowserController:
         except Exception as e:
             import traceback
             error_msg = str(e)
+            
             logger.error(f"Error initializing browser for session {self.session_id}: {error_msg}")
             logger.error(f"Full traceback: {traceback.format_exc()}")
             
