@@ -19,7 +19,7 @@ _session_thread_pools = {}  # Dict[session_id, ThreadPoolExecutor]
 try:
     from dotenv import load_dotenv
     # Find .env file in py-backend directory
-    env_path = Path(__file__).parent.parent.parent.parent.parent / ".env"
+    env_path = Path(__file__).parent.parent.parent.parent / ".env"
     if env_path.exists():
         load_dotenv(env_path)
         logging.info(f"Loaded .env from: {env_path}")

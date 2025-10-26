@@ -10,8 +10,8 @@
     "kill-port": "kill-port 8000",
     "client-dev": "cross-env NODE_OPTIONS='--no-warnings' node node_modules/next/dist/bin/next dev",
     "client-start": "cross-env NODE_OPTIONS='--no-warnings' node node_modules/next/dist/bin/next start",
-    "server-dev": "npm run kill-port && cd py-backend && uvicorn app.app:app --host 0.0.0.0 --port 8000",
-    "server-start": "cd py-backend && uvicorn app.app:app --host 0.0.0.0 --port 8000"
+    "server-dev": "npm run kill-port && cd py-backend && source venv/bin/activate && uvicorn app.app:app --host 0.0.0.0 --port 8000",
+    "server-start": "cd py-backend && source venv/bin/activate && uvicorn app.app:app --host 0.0.0.0 --port 8000"
   },
   "engines": {
     "node": ">=16.0.0 <24.0.0"
