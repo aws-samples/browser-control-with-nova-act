@@ -43,6 +43,8 @@ _browser_controllers = {}  # Dict[session_id, BrowserController]
 _shutdown_event = None
 _is_shutting_down = False
 
+
+
 def _nova_thread_initializer():
     """Initialize Nova Act thread with isolated asyncio context"""
     import asyncio
@@ -831,6 +833,8 @@ async def async_main(args):
     
     try:
         logger.info("Starting MCP server...")
+        
+        
         if args.transport == "stdio":
             # Run in stdio mode with short timeout
             await asyncio.wait_for(
@@ -886,6 +890,8 @@ def main():
         if args.transport == "streamable-http":
             # Use streamable HTTP transport (recommended for production)
             logger.info("Starting MCP server with Streamable HTTP transport...")
+            
+            
             mcp.run(transport="streamable-http", host=args.host, port=args.port)
         else:
             # Handle KeyboardInterrupt before it reaches asyncio.run()
