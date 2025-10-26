@@ -268,10 +268,19 @@ async def take_control(session_id: str):
             logger.info(f"Take control API success response: {result}")
             return result
         else:
+            # REACTIVE CLEANUP: Only clean up after failure
+            logger.info(f"Take control failed for session {session_id}, performing reactive cleanup...")
+            try:
+                from app.libs.utils.browser_cleanup import BrowserCleanup
+                cleanup_results = BrowserCleanup.cleanup_session_browser(session_id)
+                logger.info(f"Reactive cleanup completed for session {session_id}: {cleanup_results}")
+            except Exception as cleanup_error:
+                logger.warning(f"Reactive cleanup failed for session {session_id}: {cleanup_error}")
+            
             result = {
                 "status": "error",
                 "session_id": session_id,
-                "message": "Failed to take control of browser. Please check browser state and try again."
+                "message": "Failed to take control of browser. Performed cleanup - please try again."
             }
             logger.error(f"Take control API error response: {result}")
             return result
@@ -346,9 +355,14 @@ async def release_control(session_id: str):
                 
                 logger.info(f"Restarting browser in headless mode for session {session_id}")
                 
+                # Use the configured default browser start URL for consistency
+                from app.libs.config.config import BROWSER_START_URL
+                safe_url = BROWSER_START_URL
+                logger.info(f"Using configured default URL for headless restart: {safe_url}")
+                
                 result = await browser_manager.session.call_tool("restart_browser", {
                     "headless": True, 
-                    "url": current_url
+                    "url": safe_url
                 })
                 response_data = browser_manager.parse_response(result.content[0].text)
                 

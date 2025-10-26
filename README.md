@@ -26,10 +26,39 @@ Bridges the gap between human intent and browser actions:
 <img src="assets/screenshots/multi-session.png" width="800" alt="Multi-Session">
 
 Enable multiple sessions (or users) to automate browser tasks simultaneously:
-- Session-Based Isolation: Each user gets a dedicated browser instance with unique session ID
-- Independent Browser Profiles: Separate cookies, authentication, and browsing data per session
-- Parallel Task Execution: Multiple browser automation tasks run concurrently without interference
-- Scalable Architecture: Handles dozens of concurrent users with isolated browser contexts
+- **Session-Based Isolation**: Each user gets a dedicated browser instance with unique session ID
+- **Independent Browser Profiles**: Separate cookies, authentication, and browsing data per session
+- **Parallel Task Execution**: Multiple browser automation tasks run concurrently without interference
+- **Scalable Architecture**: Handles dozens of concurrent users with isolated browser contexts
+
+#### Session-Level Cleanup & Recovery
+The system includes intelligent session-specific cleanup for robust multi-user operation:
+
+**🔧 Reactive Cleanup System**
+- **Surgical Recovery**: When a session encounters browser issues, only that specific session is cleaned up
+- **Session Isolation**: Other users' browser sessions remain completely unaffected
+- **Automatic Retry**: Failed sessions get cleaned up automatically and prompt user to retry
+
+**📁 Profile Management**
+```
+~/.nova_browser_profiles/base/          # Base template (shared)
+/tmp/nova_browser_sessions/
+├── session_abc123-session-id/          # Session A's profile
+├── session_def456-session-id/          # Session B's profile  
+└── session_ghi789-session-id/          # Session C's profile
+```
+
+**🛠️ What Gets Cleaned Up (Per Session)**
+- Browser processes using that session's profile directory
+- Profile lock files preventing new browser instances
+- Temporary session profile directories
+- Session-specific browser state and cache
+
+**✅ Production-Ready Multi-User Support**
+- Multiple users can take/release browser control simultaneously
+- Browser conflicts in one session don't affect others
+- Automatic cleanup prevents resource leaks and profile conflicts
+- No manual intervention required for session recovery
 
 ### 👥 **Human-in-the-Loop**
 Seamlessly handles scenarios that require human judgment:
@@ -105,14 +134,29 @@ npm install
 cd py-backend
 cp .env.example .env
 
-# Edit .env file and add your Nova Act API Key
+# Edit .env file and add your Nova Act API Key and AWS credentials
 # NOVA_ACT_API_KEY=your_api_key_here
+# AWS_PROFILE=your_aws_profile_name
+# AWS_REGION=us-east-1
 ```
+
+**Required Environment Variables:**
+- `NOVA_ACT_API_KEY`: Your Nova Act API key from nova.amazon.com/act
+- `AWS_PROFILE`: Your AWS SSO profile name (e.g., `username+account-Admin`)
+- `AWS_REGION`: AWS region for Bedrock API calls (e.g., `us-east-1`)
 
 **Alternative: Use system environment variables**
 ```bash
 export NOVA_ACT_API_KEY="your_api_key_here"
+export AWS_PROFILE="your_aws_profile_name"
+export AWS_REGION="us-east-1"
 ```
+
+**AWS Credentials Setup:**
+This project requires AWS credentials for Bedrock API access. Ensure you have:
+1. AWS CLI configured with SSO: `aws configure sso`
+2. Valid AWS session: `aws sso login --profile your-profile-name`
+3. Bedrock access permissions in your AWS account
 
 **2. Configure Browser Settings (Optional)**
 All browser settings can be configured in the `.env` file or by editing `py-backend/app/libs/config/config.py`:
@@ -135,11 +179,34 @@ DEFAULT_MODEL_ID = "us.amazon.nova-premier-v1:0"
 
 ### Running the Application
 
+**Recommended Method (handles all setup automatically):**
 ```bash
 npm run dev
 ```
 
+This command will:
+- Activate the Python virtual environment
+- Set up proper module paths
+- Start both frontend and backend servers concurrently
+- Kill any existing processes on port 8000
+
+**Manual Method (if needed):**
+```bash
+# Terminal 1: Start backend
+cd py-backend
+source venv/bin/activate
+uvicorn app.app:app --host 0.0.0.0 --port 8000
+
+# Terminal 2: Start frontend  
+npm run client-dev
+```
+
 Visit **http://localhost:3000** to start automating!
+
+**Troubleshooting:**
+- If you get "Unable to locate credentials" error, ensure AWS_PROFILE and AWS_REGION are set in your `.env` file
+- If you get "No module named 'app'" error, use `npm run dev` instead of running Python directly
+- If port 8000 is busy, run `npm run kill-port` first
 
 ## Usage Examples
 
