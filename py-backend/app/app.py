@@ -1,5 +1,6 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from app.api_routes import thought_stream, router, mcp_servers, browser_control, agent_control
 from app.libs.utils.utils import setup_paths, register_session_and_thought_handler
 from app.libs.config.config import BROWSER_USER_DATA_DIR
@@ -52,7 +53,60 @@ app.add_middleware(
 
 @app.get("/health")
 async def health_check():
-    return {"status": "healthy"}
+    """Enhanced health check that verifies Nova Act server"""
+    try:
+        import httpx
+        async with httpx.AsyncClient() as client:
+            # Test Nova Act server connectivity
+            response = await client.head("http://localhost:8001/mcp", timeout=3.0)
+            if response.status_code in [200, 405]:  # 405 = Method Not Allowed is OK
+                return {
+                    "status": "healthy", 
+                    "service": "nova-act-main-app",
+                    "mcp_server": "healthy"
+                }
+            else:
+                return JSONResponse(
+                    status_code=503,
+                    content={
+                        "status": "unhealthy", 
+                        "service": "nova-act-main-app",
+                        "mcp_server": f"error_{response.status_code}"
+                    }
+                )
+    except Exception as e:
+        return JSONResponse(
+            status_code=503,
+            content={
+                "status": "unhealthy",
+                "service": "nova-act-main-app", 
+                "mcp_server": f"error_{str(e)}"
+            }
+        )
+
+@app.api_route("/mcp", methods=["GET", "POST", "DELETE", "HEAD"])
+async def proxy_mcp_to_nova_act(request: Request):
+    """Proxy MCP requests to Nova Act server"""
+    try:
+        import httpx
+        async with httpx.AsyncClient() as client:
+            response = await client.request(
+                method=request.method,
+                url="http://localhost:8001/mcp",
+                headers=dict(request.headers),
+                content=await request.body(),
+                timeout=30.0
+            )
+            return Response(
+                content=response.content,
+                status_code=response.status_code,
+                headers=dict(response.headers)
+            )
+    except Exception as e:
+        return JSONResponse(
+            status_code=502,
+            content={"error": f"MCP proxy error: {str(e)}"}
+        )
 
 @app.on_event("shutdown")
 async def shutdown_event():

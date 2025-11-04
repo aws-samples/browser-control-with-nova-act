@@ -1,8 +1,8 @@
 [
   {
-    "id": "default-mcp-1",
-    "name": "Nova Act",
-    "hostname": "localhost:8001",
+    "id": "nova-act-mcp",
+    "name": "Nova Act Browser",
+    "hostname": "localhost:8000",
     "isActive": true,
     "isConnected": true
   }

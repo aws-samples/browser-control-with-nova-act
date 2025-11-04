@@ -19,7 +19,7 @@ _session_thread_pools = {}  # Dict[session_id, ThreadPoolExecutor]
 try:
     from dotenv import load_dotenv
     # Find .env file in py-backend directory
-    env_path = Path(__file__).parent.parent.parent.parent.parent / ".env"
+    env_path = Path(__file__).parent.parent.parent.parent / ".env"
     if env_path.exists():
         load_dotenv(env_path)
         logging.info(f"Loaded .env from: {env_path}")
@@ -42,6 +42,8 @@ mcp = FastMCP("browser-automation")
 _browser_controllers = {}  # Dict[session_id, BrowserController]
 _shutdown_event = None
 _is_shutting_down = False
+
+
 
 def _nova_thread_initializer():
     """Initialize Nova Act thread with isolated asyncio context"""
@@ -500,9 +502,77 @@ async def restart_browser(headless: bool = False, url: str = None):
         dict: Status of the restart operation
     """
     try:
-        await close_browser()
-        return await initialize_browser(headless, url)
+        session_id = get_session_id_from_context()
+        browser = get_browser_controller(session_id)
+        
+        logger.info(f"Restarting browser for session {session_id} with headless={headless}")
+        
+        # Step 1: Close existing browser if initialized
+        if await run_in_session_thread(session_id, browser.is_initialized):
+            logger.info("Closing existing browser...")
+            success = await run_in_session_thread(session_id, browser.close)
+            logger.info(f"Browser close result: {success}")
+            
+            # Clean up session resources
+            global _browser_controllers
+            if browser.session_id in _browser_controllers:
+                del _browser_controllers[browser.session_id]
+            
+            # Shutdown session ThreadPool
+            shutdown_session_thread_pool(session_id)
+            
+            await asyncio.sleep(0.5)
+        
+        # Step 2: Get a fresh browser controller
+        browser = get_browser_controller(session_id)
+        
+        # Step 3: Initialize browser with new settings
+        logger.info(f"Initializing browser with headless={headless}, url={url}")
+        
+        # Check if already initialized (using session thread)
+        if await run_in_session_thread(session_id, browser.is_initialized):
+            screenshot_data = await run_in_session_thread(session_id, browser.take_screenshot)
+            
+            return {
+                "status": "already_initialized",
+                "message": "Browser was already initialized",
+                "current_url": await run_in_session_thread(session_id, browser.get_current_url),
+                "page_title": await run_in_session_thread(session_id, browser.get_page_title),
+                "screenshot": screenshot_data
+            }
+        
+        # Initialize browser in session thread
+        success, screenshot_data, error_msg = await run_in_session_thread(
+            session_id,
+            browser.initialize_browser,
+            headless=headless,
+            starting_url=url
+        )
+        
+        if not success:
+            detailed_error = error_msg or 'Unknown error'
+            logger.error(f"Browser initialization failed for session {session_id}: {detailed_error}")
+            return {
+                "status": "error",
+                "message": f"Failed to restart browser: {detailed_error}"
+            }
+        
+        # Get additional info from same session thread
+        current_url = await run_in_session_thread(session_id, browser.get_current_url)
+        page_title = await run_in_session_thread(session_id, browser.get_page_title)
+        
+        response = {
+            "status": "success",
+            "message": "Browser restarted successfully",
+            "current_url": current_url,
+            "page_title": page_title,
+            "screenshot": screenshot_data
+        }
+        logger.info(f"Browser restarted successfully: {format_log_response(response)}")
+        return response
+        
     except Exception as e:
+        logger.error(f"Error in restart_browser: {str(e)}")
         return {
             "status": "error",
             "message": f"Failed to restart browser: {str(e)}"
@@ -763,6 +833,8 @@ async def async_main(args):
     
     try:
         logger.info("Starting MCP server...")
+        
+        
         if args.transport == "stdio":
             # Run in stdio mode with short timeout
             await asyncio.wait_for(
@@ -818,6 +890,8 @@ def main():
         if args.transport == "streamable-http":
             # Use streamable HTTP transport (recommended for production)
             logger.info("Starting MCP server with Streamable HTTP transport...")
+            
+            
             mcp.run(transport="streamable-http", host=args.host, port=args.port)
         else:
             # Handle KeyboardInterrupt before it reaches asyncio.run()
